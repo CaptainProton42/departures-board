@@ -55,6 +55,80 @@
           </div>
         </div>
 
+        <div class="form-group" id="nrAltStation" style="display:none">
+          <label class="control-label" for="altStation">Alternate station</label>
+          <div style="display: flex; gap: 10px;">
+            <div style="flex: 1;">
+              <input id="altStation" type="text" placeholder="Type the station name" class="form-control input-md typeahead" style="width:100%;">
+            </div>
+            <div style="flex-shrink: 0;">
+              <button id="clearAltStation" name="clearAltStation" class="btn" type="button">Clear</button>
+            </div>
+          </div>
+          <div class="form-group" id="altStationTimeSelectors" style="padding-top: 10px;">
+            <div style="display: flex; gap: 10px;">
+              <div style="flex: 1;">
+                <label for="altStart">Show alternate from</label>
+                <select id="altStart" class="form-control" disabled>
+                  <option value="0">0:00</option>
+                  <option value="1">1:00</option>
+                  <option value="2">2:00</option>
+                  <option value="3">3:00</option>
+                  <option value="4">4:00</option>
+                  <option value="5">5:00</option>
+                  <option value="6">6:00</option>
+                  <option value="7">7:00</option>
+                  <option value="8">8:00</option>
+                  <option value="9">9:00</option>
+                  <option value="10">10:00</option>
+                  <option value="11">11:00</option>
+                  <option value="12">12:00</option>
+                  <option value="13">13:00</option>
+                  <option value="14">14:00</option>
+                  <option value="15">15:00</option>
+                  <option value="16">16:00</option>
+                  <option value="17">17:00</option>
+                  <option value="18">18:00</option>
+                  <option value="19">19:00</option>
+                  <option value="20">20:00</option>
+                  <option value="21">21:00</option>
+                  <option value="22">22:00</option>
+                  <option value="23">23:00</option>
+                </select>
+              </div>
+              <div style="flex: 1;">
+                <label for="altEnd">Show default from</label>
+                <select id="altEnd" class="form-control" disabled>
+                  <option value="0">0:00</option>
+                  <option value="1">1:00</option>
+                  <option value="2">2:00</option>
+                  <option value="3">3:00</option>
+                  <option value="4">4:00</option>
+                  <option value="5">5:00</option>
+                  <option value="6">6:00</option>
+                  <option value="7">7:00</option>
+                  <option value="8">8:00</option>
+                  <option value="9">9:00</option>
+                  <option value="10">10:00</option>
+                  <option value="11">11:00</option>
+                  <option value="12">12:00</option>
+                  <option value="13">13:00</option>
+                  <option value="14">14:00</option>
+                  <option value="15">15:00</option>
+                  <option value="16">16:00</option>
+                  <option value="17">17:00</option>
+                  <option value="18">18:00</option>
+                  <option value="19">19:00</option>
+                  <option value="20">20:00</option>
+                  <option value="21">21:00</option>
+                  <option value="22">22:00</option>
+                  <option value="23">23:00</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="form-group">
           <label class="control-label" for="brightness">Brightness</label>
           <input style="padding: 0px;" type="range" min="1" max="255" value="50" class="form-control" id="brightness">
@@ -174,6 +248,8 @@
       stationSelectedTfL: false,
       stationName: "",
       stationCRS: "",
+      stationLatitude: 0,
+      stationLongitude: 0,
       tubeName: "",
       tubeId: "",
       tubeMode: false,
@@ -183,6 +259,13 @@
       callingStationSelected: false,
       callingStation: "",
       callingCrs: "",
+      altStationSelected: false,
+      altStation: "",
+      altCrs: "",
+      altLatitude: 0,
+      altLongitude: 0,
+      altStarts: 0,
+      altEnds: 23,
       firmwareVersion: "",
       jsonSettings: {},
     };
@@ -200,6 +283,10 @@
       saveButton: document.getElementById("save"),
       clearButton: document.getElementById("clearFilter"),
       fwinfo: document.getElementById("fwinfo"),
+      altStation: document.getElementById("altStation"),
+      clearAltButton: document.getElementById("clearAltStation"),
+      altStart: document.getElementById("altStart"),
+      altEnd: document.getElementById("altEnd")
     };
 
     const substringMatcher = () => {
@@ -268,6 +355,18 @@
       }
     });
 
+    $(elements.altStation).typeahead({
+      name: 'stations',
+      source: substringMatcher(),
+      updater: function(item) {
+        handleAltStationSelected(item);
+        return item;
+      },
+      highlighter: function(item) {
+        return '<img src="/nr.webp" style="margin-right:6px">' + item;
+      }
+    });
+
     $(elements.searchNameTfL).typeahead({
       name: 'stations',
       source: substringMatcherTfL(),
@@ -296,6 +395,9 @@
     elements.brightness.addEventListener("change", handleBrightnessChange);
     elements.clearButton.addEventListener("click", handleClearFilter);
     elements.tubeMode.addEventListener("click", toggleBoardMode);
+    elements.altStation.addEventListener("focus", () => elements.altStation.select());
+    elements.altStation.addEventListener("blur", () => setTimeout(handleAltStationLostFocus, 500));
+    elements.clearAltButton.addEventListener("click", handleClearAltStation);
 
     document.addEventListener("DOMContentLoaded", async () => {
       await fetchConfig();
@@ -348,6 +450,12 @@
       elements.sleepEnd.disabled = !enabled;
     }
 
+    function toggleAltSelectors() {
+      const enabled = appState.altCrs;
+      elements.altStart.disabled = !enabled;
+      elements.altEnd.disabled = !enabled;
+    }
+
     function toggleBoardMode() {
       const enableTube = elements.tubeMode.checked;
       appState.tubeMode = enableTube;
@@ -358,6 +466,7 @@
       show("nrSearchBox",!enableTube);
       show("nrCallingBox",!enableTube);
       show("nrAtt",!enableTube);
+      show("nrAltStation",!enableTube);
       if ((enableTube && appState.tubeName) || (!enableTube && appState.stationName)) {
         elements.saveButton.removeAttribute("disabled");
        } else {
@@ -382,6 +491,16 @@
       elements.callingStation.value = appState.callingStation;
       elements.searchNameTfL.value = appState.tubeName;
       elements.brightness.value = s.brightness || 50;
+      const pct = (elements.brightness.value/255)*100;
+      elements.brightness.title = Math.round(pct) + "%";
+
+      appState.altStation = s.altStation || "";
+      appState.altCrs = s.altCrs || "";
+      appState.altLatitude = s.altLat || 0;
+      appState.altLongitude = s.altLon || 0;
+      appState.altStarts = s.altStarts || 12;
+      appState.altEnds = s.altEnds || 23;
+      elements.altStation.value = appState.altStation;
 
       setCheckbox("tubeMode", s.tube);
       setCheckbox("enableSleep", s.sleep);
@@ -392,8 +511,11 @@
 
       $('#sleepStart').val(s.sleepStarts);
       $('#sleepEnd').val(s.sleepEnds);
+      $('#altStart').val(appState.altStarts);
+      $('#altEnd').val(appState.altEnds);
 
       toggleSleepSelectors();
+      toggleAltSelectors();
       toggleBoardMode();
     }
 
@@ -421,6 +543,15 @@
       appState.callingCrs = item.crsCode;
     }
 
+    function handleAltStationSelected(item) {
+      appState.altStationSelected = true;
+      appState.altStation = item.name;
+      appState.altCrs = item.crsCode;
+      appState.altLatitude = item.latitude;
+      appState.altLongitude = item.longitude;
+      toggleAltSelectors();
+    }
+
     function handleTfLStationSelected(item) {
       appState.stationSelectedTfL = true;
       appState.tubeName = item.name;
@@ -446,6 +577,14 @@
       }
     }
 
+    function handleAltStationLostFocus() {
+      if (!appState.altStationSelected) {
+        elements.altStation.value = appState.altStation;
+      } else {
+        appState.altStationSelected = false;
+      }
+    }
+
     function handleTfLStationLostFocus() {
       if (!appState.stationSelectedTfL) {
         elements.searchNameTfL.value = appState.tubeName;
@@ -461,10 +600,22 @@
       elements.callingStation.value = appState.callingStation;
     }
 
+    function handleClearAltStation() {
+      appState.altCrs = "";
+      appState.altStation = "";
+      appState.altStationSelected = false;
+      appState.altLatitude = 0;
+      appState.altLongitude = 0;
+      elements.altStation.value = appState.altStation;
+      toggleAltSelectors();
+    }
+
     function handleBrightnessChange() {
       const brightness = this.value;
       appState.jsonSettings.brightness = brightness;
       fetch(`/brightness?b=${brightness}`);
+      const pct = (brightness/255)*100;
+      this.title = Math.round(pct) + "%";
     }
 
     async function handleSave() {
@@ -486,6 +637,12 @@
       s.weather = isChecked("enableWeather");
       s.sleepStarts = parseInt(elements.sleepStart.value);
       s.sleepEnds = parseInt(elements.sleepEnd.value);
+      s.altCrs = appState.altCrs;
+      s.altStation = appState.altStation;
+      s.altLat = appState.altLatitude;
+      s.altLon = appState.altLongitude;
+      s.altStarts = parseInt(elements.altStart.value);
+      s.altEnds = parseInt(elements.altEnd.value);
 
       try {
         const response = await fetch('/savesettings', {

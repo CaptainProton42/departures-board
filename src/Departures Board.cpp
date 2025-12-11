@@ -20,9 +20,9 @@
 
 // Release version number
 #define VERSION_MAJOR 1
-#define VERSION_MINOR 5
+#define VERSION_MINOR 6
 #define WEBAPPVER_MAJOR 1
-#define WEBAPPVER_MINOR 2
+#define WEBAPPVER_MINOR 3
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -294,6 +294,10 @@ int dataLoadFailure = 0;            // Count of failed data downloads
 unsigned long lastLoadFailure = 0;  // When the last failure occurred
 int dateWidth;                      // Width of the displayed date in pixels
 int dateDay;                        // Day of the month of displayed date
+bool altStationEnabled = false;     // Switch between stations based on time of day
+bool altStationActive = false;      // Is the alternate station currently shown
+byte altStarts = 12;                // Hour at which to switch to the alternate station
+byte altEnds = 23;                  // Hour at which to switch back to the default station
 
 char hostname[20] = "DeparturesBoard"; // Default network hostname (WiFi and mDNS - can be manually overridden in config.json)
 char myUrl[24];                     // Stores the board's own url
@@ -302,14 +306,17 @@ char myUrl[24];                     // Stores the board's own url
 bool wifiConfigured = false;        // Is WiFi configured successfully?
 
 // Station Board Data
-char nrToken[37];                   // National Rail Darwin Lite Tokens are in the format nnnnnnnn-nnnn-nnnn-nnnn-nnnnnnnnnnnn, where each 'n' represents a hexadecimal character (0-9 or a-f).
-char crsCode[4];                    // Station code (3 character)
+char nrToken[37] = "";              // National Rail Darwin Lite Tokens are in the format nnnnnnnn-nnnn-nnnn-nnnn-nnnnnnnnnnnn, where each 'n' represents a hexadecimal character (0-9 or a-f).
+char crsCode[4] = "";               // Station code (3 character)
 float stationLat=0;                 // Selected station Latitude/Longitude (used to get weather for the location)
 float stationLon=0;
-char callingCrsCode[4];             // Station code to filter routes on
-char callingStation[45];            // Calling filter station friendly name
+char callingCrsCode[4] = "";        // Station code to filter routes on
+char callingStation[45] = "";       // Calling filter station friendly name
+char altCrsCode[4] = "";            // Station code of alternate station
+float altLat=0;                     // Alternate station Latitude/Longitude (used to get weather for the location)
+float altLon=0;
 String tflAppkey = "";              // TfL API Key
-char tubeId[13];                    // Underground station naptan id
+char tubeId[13] = "";               // Underground station naptan id
 String tubeName="";                 // Underground Station Name
 bool tubeMode = false;              // Mode for the board - National Rail or London Underground
 
@@ -729,6 +736,18 @@ bool isSnoozing() {
   }
 }
 
+// Returns true if an alternate station is enabled and we're within the activation period
+bool isAltActive() {
+  if (!altStationEnabled) return false;
+  getLocalTime(&timeinfo);
+  byte myHour = timeinfo.tm_hour;
+  if (altStarts > altEnds) {
+    if ((myHour >= altStarts) || (myHour < altEnds)) return true; else return false;
+  } else {
+    if ((myHour >= altStarts) && (myHour < altEnds)) return true; else return false;
+  }
+}
+
 // Callback from the raildataXMLclient library when processing data. As this can take some time, this callback is used to keep the clock working
 // and to provide progress on the initial load at boot
 void raildataCallback(int stage, int nServices) {
@@ -817,6 +836,12 @@ void loadConfig() {
         else if (tubeName.endsWith(F(" DLR Station"))) tubeName.remove(tubeName.length()-12);
         else if (tubeName.endsWith(F(" (H&C Line)"))) tubeName.remove(tubeName.length()-11);
 
+        if (settings["altCrs"].is<const char*>()) strlcpy(altCrsCode, settings["altCrs"], sizeof(altCrsCode));
+        if (altCrsCode[0]) altStationEnabled = true; else altStationEnabled = false;
+        if (settings["altStarts"].is<int>())        altStarts = settings["altStarts"];
+        if (settings["altEnds"].is<int>())          altEnds = settings["altEnds"];
+        if (settings["altLat"].is<float>())         altLat = settings["altLat"];
+        if (settings["altLon"].is<float>())         altLon = settings["altLon"];
       } else {
         // JSON deserialization failed - TODO
       }
@@ -828,6 +853,75 @@ void loadConfig() {
     saveFile("/config.json",defaultConfig);
     strcpy(crsCode,"");
   }
+}
+
+// Switch to the alternate station settings if appropriate
+bool setAlternateStation() {
+  if (!tubeMode && altStationEnabled && isAltActive()) {
+    // Switch to alternate station
+    strcpy(crsCode,altCrsCode);
+    stationLat = altLat;
+    stationLon = altLon;
+    return true;
+  } else {
+    return false;
+  }
+}
+
+// Soft reset/reload
+void softResetBoard() {
+  bool previousMode = tubeMode;
+
+  // Reload the settings
+  loadConfig();
+  u8g2.clearBuffer();
+  drawStartupHeading();
+  u8g2.updateDisplay();
+
+  // Force an update asap
+  nextDataUpdate = 0;
+  nextWeatherUpdate = 0;
+  isScrollingService = false;
+  isScrollingStops = false;
+  isSleeping=false;
+  firstLoad=true;
+  noDataLoaded=true;
+  viaTimer=0;
+  timer=0;
+  prevProgressBarPosition=70;
+  startupProgressPercent=70;
+  currentMessage=0;
+  prevMessage=0;
+  prevScrollStopsLength=0;
+  isShowingVia=false;
+  line3Service=0;
+  prevService=0;
+  if (!weatherEnabled) strcpy(weatherMsg,"");
+  if (previousMode!=tubeMode) {
+    // Board mode has changed!
+    if (previousMode) {
+      // Delete the tfl client from memory
+      delete tfldata;
+      tfldata = nullptr;
+      // Create the NR client
+      raildata = new raildataXmlClient();
+      int res = raildata->init(wsdlHost, wsdlAPI, &raildataCallback);
+      if (res != UPD_SUCCESS) {
+        showWsdlFailureScreen();
+        while (true) { server.handleClient(); yield();}
+      }
+    } else {
+      // Delete the NR client from memory
+      delete raildata;
+      raildata = nullptr;
+      // Create the TfL client
+      tfldata = new TfLdataClient();
+    }
+  }
+  if (tubeMode) progressBar(F("Initialising TfL interface"),70);
+  else altStationActive = setAlternateStation();
+  station.numServices=0;
+  messages.numMessages=0;
 }
 
 // WiFiManager callback, entered config mode
@@ -1506,56 +1600,7 @@ void handleSaveSettings() {
       ESP.restart();
     } else {
       sendResponse(200,F("Configuration updated. The Departures Board will update shortly."));
-      bool previousMode = tubeMode;
-      // Reload the new settings
-      loadConfig();
-      u8g2.clearBuffer();
-      drawStartupHeading();
-      u8g2.updateDisplay();
-
-      // Force an update asap
-      nextDataUpdate = 0;
-      nextWeatherUpdate = 0;
-      isScrollingService = false;
-      isScrollingStops = false;
-      isSleeping=false;
-      firstLoad=true;
-      noDataLoaded=true;
-      viaTimer=0;
-      timer=0;
-      prevProgressBarPosition=70;
-      startupProgressPercent=70;
-      currentMessage=0;
-      prevMessage=0;
-      prevScrollStopsLength=0;
-      isShowingVia=false;
-      line3Service=0;
-      prevService=0;
-      if (!weatherEnabled) strcpy(weatherMsg,"");
-      if (previousMode!=tubeMode) {
-        // Board mode has changed!
-        if (previousMode) {
-          // Delete the tfl client from memory
-          delete tfldata;
-          tfldata = nullptr;
-          // Create the NR client
-          raildata = new raildataXmlClient();
-          int res = raildata->init(wsdlHost, wsdlAPI, &raildataCallback);
-          if (res != UPD_SUCCESS) {
-            showWsdlFailureScreen();
-            while (true) { server.handleClient(); yield();}
-          }
-        } else {
-          // Delete the NR client from memory
-          delete raildata;
-          raildata = nullptr;
-          // Create the TfL client
-          tfldata = new TfLdataClient();
-        }
-      }
-      if (tubeMode) progressBar(F("Initialising TfL interface"),70);
-      station.numServices=0;
-      messages.numMessages=0;
+      softResetBoard();
     }
   } else {
     // Something went wrong saving the config file
@@ -1952,6 +1997,9 @@ void updateCurrentWeather() {
 // The main processing cycle for the National Rail Departures Board
 //
 void departureBoardLoop() {
+
+  if (altStationEnabled && !isSleeping && altStationActive != isAltActive()) softResetBoard(); // Switch between station views
+
   if ((millis() > nextDataUpdate) && (!isScrollingStops) && (!isScrollingService) && (lastUpdateResult != UPD_UNAUTHORISED) && (!isSleeping) && (wifiConnected)) {
     timer = millis() + 2000;
     if (getStationBoard()) {
@@ -2375,6 +2423,7 @@ void setup(void) {
     startupProgressPercent=70;
   } else {
     progressBar(F("Initialising National Rail interface"),60);
+    altStationActive = setAlternateStation();  // Check & set the alternate station if appropriate
     raildata = new raildataXmlClient();
     int res = raildata->init(wsdlHost, wsdlAPI, &raildataCallback);
     if (res != UPD_SUCCESS) {
