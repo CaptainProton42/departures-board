@@ -3,7 +3,7 @@
 This is an ESP32 based mini Departures Board replicating those at many UK railway stations using data provided by National Rail's public API and replicating London Underground Arrivals boards using data provided by TfL . This implementation uses a 3.12" OLED display panel with SSD1322 display controller onboard. STL files are also provided for 3D printing the custom desktop case.
 
 > [!IMPORTANT]
-> Several individuals are currently selling pre-assembled departure boards on eBay as their own commercial products, with mark-ups of approximately 300% over the component costs. These sellers have neither contributed to the development of this software nor sought permission to use it, and their actions constitute a violation of the terms of the [licence agreement](#licence). If you want to support the ongoing development of this free software, please **do not** buy from these unofficial sellers.
+> Several individuals are currently selling pre-assembled departure boards on eBay as their own commercial products, with mark-ups of approximately 300% over the component costs. These sellers have neither contributed to the development of this software nor sought permission to use it, and their actions constitute a violation of the terms of the [licence agreement](#licence).
 
 ## Features
 * All processing is done onboard by the ESP32 processor
@@ -129,4 +129,4 @@ A few other urls have been implemented, primarily for debugging/developer use:
 This software is completely free for non-commercial use without obligation. If you would like to support me and encourage ongoing updates, you can [buy me a coffee!](https://buymeacoffee.com/gadec.uk)
 
 ### Licence
-This work is licensed under **Creative Commons Attribution-NonCommercial-ShareAlike 4.0**. To view a copy of this licence, visit [https://creativecommons.org/licenses/by-nc-sa/4.0/](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+This work is licensed under **Creative Commons Attribution-NonCommercial-ShareAlike 4.0**. To view a copy of this licence, visit [https://creativecommons.org/licenses/by-nc-sa/4.0/](https://creativecommons.org/licenses/by-nc-sa/4.0/). Note: the terms of the licence prohibit commericial use of this work, this includes *any* reselling of the work in kit or assembled form for commercial gain.
