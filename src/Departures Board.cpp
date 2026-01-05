@@ -20,7 +20,7 @@
 
 // Release version number
 #define VERSION_MAJOR 1
-#define VERSION_MINOR 8
+#define VERSION_MINOR 9
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -310,6 +310,7 @@ bool altStationEnabled = false;     // Switch between stations based on time of 
 bool altStationActive = false;      // Is the alternate station currently shown
 byte altStarts = 12;                // Hour at which to switch to the alternate station
 byte altEnds = 23;                  // Hour at which to switch back to the default station
+bool noScrolling = false;           // Suppress all horizontal scrolling
 
 char hostname[20] = "DeparturesBoard"; // Default network hostname (WiFi and mDNS - can be manually overridden in config.json)
 char myUrl[24];                     // Stores the board's own url
@@ -773,6 +774,16 @@ bool saveFile(String fName, String fData) {
   } else return false;
 }
 
+// Loads a file (string) from the FFS
+String loadFile(String fName) {
+  File f = LittleFS.open(fName,"r");
+  if (f) {
+    String result = f.readString();
+    f.close();
+    return result;
+  } else return "";
+}
+
 // Get the Build Timestamp of the running firmware
 String getBuildTime() {
   char timestamp[22];
@@ -783,6 +794,27 @@ String getBuildTime() {
   strptime(timestamp,"%b %d %Y %H:%M:%S",&tm);
   sprintf(buildtime,"%02d%02d%02d%02d%02d",tm.tm_year-100,tm.tm_mon+1,tm.tm_mday,tm.tm_hour,tm.tm_min);
   return String(buildtime);
+}
+
+void checkPostWebUpgrade() {
+  String prevGUI = loadFile(F("/webver"));
+  prevGUI.trim();
+  String currentGUI = String(WEBAPPVER_MAJOR) + F(".") + String(WEBAPPVER_MINOR);
+  if (prevGUI != currentGUI) {
+    // clean up old/dev files
+    progressBar(F("Cleaning up following upgrade"),45);
+    LittleFS.remove(F("/index_d.htm"));
+    LittleFS.remove(F("/index.htm"));
+    LittleFS.remove(F("/keys.htm"));
+    LittleFS.remove(F("/nrelogo.webp"));
+    LittleFS.remove(F("/tfllogo.webp"));
+    LittleFS.remove(F("/btlogo.webp"));
+    LittleFS.remove(F("/tube.webp"));
+    LittleFS.remove(F("/nr.webp"));
+    LittleFS.remove(F("/favicon.svg"));
+    LittleFS.remove(F("/favicon.png"));
+    saveFile(F("/webver"),currentGUI);
+  }
 }
 
 // Check if the NR clock needs to be updated
@@ -928,6 +960,8 @@ void loadConfig() {
         if (settings[F("busName")].is<const char*>())    busName = String(settings[F("busName")]);
         if (settings[F("busLat")].is<float>())           busLat = settings[F("busLat")];
         if (settings[F("busLon")].is<float>())           busLon = settings[F("busLon")];
+
+        if (settings[F("noScroll")].is<bool>())          noScrolling = settings[F("noScroll")];
       } else {
         // JSON deserialization failed - TODO
       }
@@ -1274,6 +1308,7 @@ void drawStationBoard() {
     u8g2.clearBuffer();
     u8g2.setContrast(brightness);
     firstLoad=false;
+    line3Service = noScrolling ? 1 : 0;
   } else {
     // Clear the top two lines
     blankArea(0,LINE0,256,LINE2-1);
@@ -1366,6 +1401,9 @@ void drawStationBoard() {
     // Setup for the first message to rollover to
     isScrollingStops=false;
     currentMessage=numMessages-1;
+    if (noScrolling && station.numServices>1) {
+      drawServiceLine(1,LINE2);
+    }
   } else {
     blankArea(0,LINE2,256,LINE4-LINE2);
     u8g2.setFont(NatRailTall12);
@@ -1434,6 +1472,7 @@ bool getUndergroundBoard() {
     lastDataLoadTime=millis();
     noDataLoaded=false;
     dataLoadSuccess++;
+    if (noScrolling) messages.numMessages = 0;
     return true;
   } else if (lastUpdateResult == UPD_DATA_ERROR || lastUpdateResult == UPD_TIMEOUT) {
     lastLoadFailure=millis();
@@ -2217,7 +2256,7 @@ void departureBoardLoop() {
     updateCurrentWeather(stationLat,stationLon);
   }
 
-  if (millis()>timer && numMessages && !isScrollingStops && !isSleeping && lastUpdateResult!=UPD_UNAUTHORISED && lastUpdateResult!=UPD_DATA_ERROR) {
+  if (millis()>timer && numMessages && !isScrollingStops && !isSleeping && lastUpdateResult!=UPD_UNAUTHORISED && lastUpdateResult!=UPD_DATA_ERROR && !noScrolling) {
     // Need to start a new scrolling line 2
     prevMessage = currentMessage;
     prevScrollStopsLength = scrollStopsLength;
@@ -2243,14 +2282,14 @@ void departureBoardLoop() {
     // Need to change to the next service if there is one
     if (station.numServices <= 1 && !weatherMsg[0]) {
       // There's no other services and no weather so just so static attribution.
-      drawServiceLine(1,LINE3);
+      drawServiceLine(1,LINE3); //TODO?
       serviceTimer = millis() + 30000;
       isScrollingService = false;
     } else {
       prevService = line3Service;
       line3Service++;
       if (station.numServices) {
-        if ((line3Service>station.numServices && !weatherMsg[0]) || (line3Service>station.numServices+1 && weatherMsg[0])) line3Service=1;  // First 'other' service
+        if ((line3Service>station.numServices && !weatherMsg[0]) || (line3Service>station.numServices+1 && weatherMsg[0])) line3Service=(noScrolling && station.numServices>1) ? 2:1;  // First 'other' service
       } else {
         if (weatherMsg[0] && line3Service>1) line3Service=0;
       }
@@ -2259,7 +2298,7 @@ void departureBoardLoop() {
     }
   }
 
-  if (isScrollingStops && millis()>timer && !isSleeping) {
+  if (isScrollingStops && millis()>timer && !isSleeping && !noScrolling) {
     blankArea(0,LINE2,256,9);
     if (scrollStopsYpos) {
       // we're scrolling up the message initially
@@ -2607,7 +2646,7 @@ void setup(void) {
   u8g2.clearBuffer();
   drawStartupHeading();
   u8g2.sendBuffer();
-  progressBar(F("Connecting to Wi-Fi"),30);
+  progressBar(F("Connecting to Wi-Fi"),20);
   WiFi.mode(WIFI_MODE_NULL);        // Reset the WiFi
   WiFi.setSleep(WIFI_PS_NONE);      // Turn off WiFi Powersaving
   WiFi.hostname(hostname);          // Set the hostname ("Departures Board")
@@ -2642,7 +2681,7 @@ void setup(void) {
   char ipBuff[17];
   WiFi.localIP().toString().toCharArray(ipBuff,sizeof(ipBuff));   // Get the IP address of the ESP32
   centreText(ipBuff,53);                                          // Display the IP address
-  progressBar(F("Wi-Fi Connected"),40);
+  progressBar(F("Wi-Fi Connected"),30);
   u8g2.sendBuffer();                                              // Send to OLED panel
 
   // Configure the local webserver paths
@@ -2705,7 +2744,7 @@ void setup(void) {
 
   // Check for Firmware/GUI updates?
   if (firmwareUpdates) {
-    progressBar(F("Checking for firmware updates"),45);
+    progressBar(F("Checking for firmware updates"),40);
     if (ghUpdate.getLatestRelease()) {
       checkForFirmwareUpdate();
     } else {
@@ -2729,6 +2768,8 @@ void setup(void) {
       server.handleClient();
     }
   }
+
+  checkPostWebUpgrade();
 
   configTime(0,0, ntpServer);                 // Configure NTP server for setting the clock
   setenv("TZ","GMT0BST,M3.5.0/1,M10.5.0",1);  // Configure UK TimeZone

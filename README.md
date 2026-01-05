@@ -103,6 +103,7 @@ At start-up, the ESP32's IP address is displayed. To change the station or to co
 - **Include Bus services** - optionally include bus replacement services (National Rail mode - shown with a small bus icon in place of platform number).
 - **Include current weather at station location** - this option requires a valid OpenWeather Map API key (National Rail/Bus mode).
 - **Increase API refresh rate** - Reduces the interval between data refreshes (National Rail mode). Uses more data and is not usually required.
+- **Suppress calling at / information messages** - removes all horizontally scrolling text (much lower functionality but less distracting).
 - **Enable automatic firmware updates at startup** - automatically checks for AND installs the latest firmware from this repository.
 - **Enable overnight sleep mode (screensaver)** - if you're running the board 24/7, you can help prevent screen burn-in by enabling this option overnight.
 
@@ -123,7 +124,7 @@ A few other urls have been implemented, primarily for debugging/developer use:
 - **/upload** - upload a file to the file system.
 
 ### Bus Stop ATCO codes
-Every UK bus stop has a unique ATCO code number. To find the ATCO code of the stop you want to monitor, go to [bustimes.org/search](https://bustimes.org/search) and type a location in the search box. Select the location from the list of places shown and then select the particular stop you want from the list. The ATCO code is shown on the stop information page. After entering the code in the Departures Board setup screen, tap the **Verify** button and the location will be shown confirming your selection. You must use the **Verify** button *before* you can save changes.
+Every UK bus stop has a unique ATCO code number. To find the ATCO code of the stop you want to monitor, go to [bustimes.org/search](https://bustimes.org/search) and type a location in the search box. Select the location from the list of places shown and then select the particular stop you want from the list. The ATCO code is shown on the stop information page. After entering the code in the Departures Board setup screen, tap the **Verify** button and the location will be shown confirming your selection. You must use the **Verify** button *before* you can save changes. Up to ten of the most recently verified ATCO codes are saved and can be selected from a dropdown list for quick access.
 
 <img src="https://github.com/user-attachments/assets/8a41ec6d-5f15-4102-b3d5-c09260986319" align="center">
 

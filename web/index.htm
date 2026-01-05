@@ -70,8 +70,21 @@
               <button id="verifyAtco" name="verifyAtco" class="btn" type="button" disabled>Verify</button>
             </div>
           </div>
-          <span class="help-block" id="busAtcoLongName" style="margin-bottom: 0;"></span>
-          <span class="help-block">Find bus stop ATCO codes at <a href="https://bustimes.org/search" target="_blank">bustimes.org</a>. Tap <a href="https://github.com/gadec-uk/departures-board/#bus-stop-atco-codes" target="_blank">here</a> for full instructions.</span>
+          <span class="help-block" id="busAtcoLongName"></span>
+
+          <div id="busAtcoHistory" style="display:none">
+            <label for="busAtcoHistoryList">Recently verified ATCO codes</label>
+            <div style="display: flex; gap: 10px;">
+              <div style="flex: 1;">
+                <select id="busAtcoHistoryList" class="form-control">
+                </select>
+              </div>
+              <div style="flex-shrink: 0;">
+                <button id="clearHistory" name="clearHistory" class="btn" type="button">Clear History</button>
+              </div>
+            </div>
+            <span class="help-block">Find bus stop ATCO codes at <a href="https://bustimes.org/search" target="_blank">bustimes.org</a>. Tap <a href="https://github.com/gadec-uk/departures-board/#bus-stop-atco-codes" target="_blank">here</a> for full instructions.</span>
+          </div>
         </div>
 
         <div class="form-group" id="nrCallingBox" style="display:none">
@@ -179,6 +192,9 @@
           </div>
           <div id="optFastRefresh" class="checkbox" style="display:none">
             <label><input type="checkbox" id="enableFastRefresh"> Increase API refresh rate</label>
+          </div>
+          <div id="optNoScroll" class="checkbox" style="display:none">
+            <label><input type="checkbox" id="noScrolling"> Suppress calling at / information messages</label>
           </div>
           <div class="checkbox">
             <label><input type="checkbox" id="enableFirmware"> Enable automatic firmware updates at startup</label>
@@ -307,6 +323,7 @@
       altEnds: 23,
       firmwareVersion: "",
       jsonSettings: {},
+      atcoHistory: []
     };
 
     const elements = {
@@ -327,8 +344,112 @@
       altEnd: document.getElementById("altEnd"),
       verifyAtcoButton: document.getElementById("verifyAtco"),
       busAtco: document.getElementById("busAtco"),
-      busLongName: document.getElementById("busAtcoLongName")
+      busLongName: document.getElementById("busAtcoLongName"),
+      clearHistoryButton: document.getElementById("clearHistory"),
+      busAtcoHistoryList: document.getElementById("busAtcoHistoryList")
     };
+
+    const MAX_BUS_ATCOS = 10;
+
+    async function fetchAtcoHistory() {
+      try {
+        const response = await fetch('/atco-history.json');
+        if (!response.ok) {
+          return;
+        }
+        appState.atcoHistory =  await response.json();
+        renderAtcoHistory();
+      } catch {
+        return;
+      }
+    }
+
+    async function saveRecentBusAtco(atco, name, lat, lon) {
+      const currentList = appState.atcoHistory;
+      const alreadyExists = currentList.some(item => item.atco === atco);
+      if (alreadyExists) return;
+
+      list = [...currentList];
+      list.unshift({ atco, name, lat, lon });
+      list = list.slice(0, MAX_BUS_ATCOS);
+      appState.atcoHistory = list;
+
+      try {
+        const blob = new Blob(
+          [JSON.stringify(list, null, 2)],
+          { type: 'application/json' }
+        );
+
+        const formData = new FormData();
+        formData.append('file', blob, 'atco-history.json');
+
+        const response = await fetch('/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          alert("Failed to save ATCO history to board.");
+          return;
+        }
+      } catch (err) {
+        alert("Failed to upload ATCO history: " + err.message);
+      }
+      renderAtcoHistory();
+    }
+
+    function findSavedBusAtco(atco) {
+      const list = appState.atcoHistory;
+      return list.find(item => item.atco === atco) || null;
+    }
+
+    function renderAtcoHistory() {
+      const list = appState.atcoHistory;
+      if (!list.length) {
+        show("busAtcoHistory",false);
+        return;
+      }
+
+      const datalist = document.getElementById("busAtcoHistoryList");
+      datalist.innerHTML = "";
+      const option = document.createElement("option");
+      option.value = "";
+      option.label = "Select a recent ATCO code...";
+      datalist.appendChild(option);
+
+      list.forEach(item => {
+        const option = document.createElement("option");
+        option.value = item.atco;
+        option.label = item.name + " (" + item.atco + ")";
+        datalist.appendChild(option);
+      });
+      show("busAtcoHistory",true);
+    }
+
+    function handleAtcoHistorySelect() {
+      const atco = elements.busAtcoHistoryList.value;
+      const saved = findSavedBusAtco(atco);
+
+      if (!saved) return;
+
+      elements.busAtco.value = saved.atco;
+      appState.busId = saved.atco;
+      appState.busName = saved.name;
+      appState.busLat = saved.lat;
+      appState.busLon = saved.lon;
+      appState.busIdOK = true;
+
+      elements.busLongName.innerHTML = "Location: <b>" + saved.name + "</b>";
+      elements.saveButton.removeAttribute("disabled");
+    }
+
+    async function handleClearHistory() {
+        try {
+          const response = await fetch('/del?f=/atco-history.json');
+        } catch {}
+        appState.atcoHistory = [];
+        renderAtcoHistory();
+    }
 
     const substringMatcher = () => {
       return (q, cb) => {
@@ -439,11 +560,14 @@
     elements.altStation.addEventListener("blur", () => setTimeout(handleAltStationLostFocus, 500));
     elements.clearAltButton.addEventListener("click", handleClearAltStation);
     elements.verifyAtcoButton.addEventListener("click", handleVerifyAtco);
+    elements.clearHistoryButton.addEventListener("click", handleClearHistory);
+    elements.busAtcoHistoryList.addEventListener('change', handleAtcoHistorySelect);
 
     document.addEventListener("DOMContentLoaded", async () => {
       await fetchConfig();
       await fetchFirmware();
       await fetchApiKeys();
+      await fetchAtcoHistory();
     });
 
     $("input[name=boardmode]").on("change", function(){
@@ -530,6 +654,7 @@
           appState.busId = userAtco;
           appState.busIdOK = true;
           elements.busLongName.innerHTML = "Location: <b>" + appState.busName + "</b>";
+          saveRecentBusAtco(userAtco, appState.busName, appState.busLat, appState.busLon);
           elements.saveButton.removeAttribute("disabled");
         } else {
           elements.saveButton.setAttribute("disabled", true);
@@ -564,8 +689,9 @@
         show("nrAtt", rail);
         show("nrAltStation", rail);
         show("optBuses", rail);
-        show("optWeather", rail);
+        show("optWeather", rail || bus);
         show("optFastRefresh", rail);
+        show("optNoScroll", rail || tube);
 
         show("tflT", tube);
         show("tflSearchBox", tube);
@@ -574,7 +700,7 @@
         show("busT", bus);
         show("busAtcoBox", bus);
         show("btAtt",bus);
-        show("optWeather",bus);
+        if (bus) renderAtcoHistory();
 
         if (
             (rail && appState.stationName) ||
@@ -656,6 +782,7 @@
       setCheckbox("enableFirmware", s.update);
       setCheckbox("enableWeather", s.weather);
       setCheckbox("enableFastRefresh", s.fastRefresh);
+      setCheckbox("noScrolling", s.noScroll);
 
       $('#sleepStart').val(s.sleepStarts);
       $('#sleepEnd').val(s.sleepEnds);
@@ -785,6 +912,7 @@
       s.update = isChecked("enableFirmware");
       s.weather = isChecked("enableWeather");
       s.fastRefresh = isChecked("enableFastRefresh");
+      s.noScroll = isChecked("noScrolling");
       s.sleepStarts = parseInt(elements.sleepStart.value);
       s.sleepEnds = parseInt(elements.sleepEnd.value);
       s.altCrs = appState.altCrs;
