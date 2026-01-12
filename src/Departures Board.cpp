@@ -19,8 +19,8 @@
  */
 
 // Release version number
-#define VERSION_MAJOR 1
-#define VERSION_MINOR 9
+#define VERSION_MAJOR 2
+#define VERSION_MINOR 0
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -64,11 +64,12 @@ static const char contentTypeHtml[] PROGMEM = "text/html";
 // Using NTP to set and maintain the clock
 static const char ntpServer[] PROGMEM = "europe.pool.ntp.org";
 static struct tm timeinfo;
+static const char ukTimezone[] = "GMT0BST,M3.5.0/1,M10.5.0";
 
 // Local firmware updates via /update Web GUI
 static const char updatePage[] PROGMEM =
 "<script src='https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js'></script>"
-"<html><body><h2>Departures Board Manual Update</h2><p>Upload a <b>firmware.bin</b> file.</p>"
+"<html><body style=\"font-family:Helvetica,Arial,sans-serif\"><h2>Departures Board Manual Update</h2><p>Upload a <b>firmware.bin</b> file.</p>"
 "<form method='POST' action='#' enctype='multipart/form-data' id='upload_form'>"
    "<input type='file' name='update'>"
         "<input type='submit' value='Update'>"
@@ -106,13 +107,13 @@ static const char updatePage[] PROGMEM =
 
 // /upload page
 static const char uploadPage[] PROGMEM =
-"<html><body>"
+"<html><body style=\"font-family:Helvetica,Arial,sans-serif\">"
 "<h2>Upload a file to the file system</h2><form method='post' enctype='multipart/form-data'><input type='file' name='name'>"
 "<input class='button' type='submit' value='Upload'></form></body></html>";
 
 // /success page
 static const char successPage[] PROGMEM =
-"<html><body><h3>Upload completed successfully.</h3>\n"
+"<html><body style=\"font-family:Helvetica,Arial,sans-serif\"><h3>Upload completed successfully.</h3>\n"
 "<p><a href=\"/dir\">List file system directory</a></p>\n"
 "<h2>Upload another file</h2><form method=\"post\" action=\"/upload\" enctype=\"multipart/form-data\"><input type=\"file\" name=\"name\"><input class=\"button\" type=\"submit\" value=\"Upload\"></form>\n"
 "</body></html>";
@@ -311,6 +312,8 @@ bool altStationActive = false;      // Is the alternate station currently shown
 byte altStarts = 12;                // Hour at which to switch to the alternate station
 byte altEnds = 23;                  // Hour at which to switch back to the default station
 bool noScrolling = false;           // Suppress all horizontal scrolling
+bool flipScreen = false;            // Rotate screen 180deg
+String timezone = "";               // custom (non UK) timezone for the clock
 
 char hostname[20] = "DeparturesBoard"; // Default network hostname (WiFi and mDNS - can be manually overridden in config.json)
 char myUrl[24];                     // Stores the board's own url
@@ -328,12 +331,16 @@ char callingStation[45] = "";       // Calling filter station friendly name
 char altCrsCode[4] = "";            // Station code of alternate station
 float altLat=0;                     // Alternate station Latitude/Longitude (used to get weather for the location)
 float altLon=0;
+char altCallingCrsCode[4];          // Station code to filter routes on (when alternate station active)
+char altCallingStation[45] = "";    // Calling filter station friendly name (when alternate station active)
 String tflAppkey = "";              // TfL API Key
 char tubeId[13] = "";               // Underground station naptan id
 String tubeName="";                 // Underground Station Name
 char busAtco[13]="";                // Bus Stop ATCO location
 String busName="";                  // Bus Stop long name
 int busDestX;                       // Variable margin for bus destination
+char busFilter[25]="";              // CSV list of services to filter on
+char cleanBusFilter[25];            // Cleaned up bus filter (for performance)
 float busLat=0;                     // Bus stop Latitude/Longitude (used to get weather for the location)
 float busLon=0;
 
@@ -955,13 +962,18 @@ void loadConfig() {
         if (settings[F("altEnds")].is<int>())            altEnds = settings[F("altEnds")];
         if (settings[F("altLat")].is<float>())           altLat = settings[F("altLat")];
         if (settings[F("altLon")].is<float>())           altLon = settings[F("altLon")];
+        if (settings[F("altCallingCrs")].is<const char*>()) strlcpy(altCallingCrsCode, settings[F("altCallingCrs")], sizeof(altCallingCrsCode));
+        if (settings[F("altCallingStation")].is<const char*>()) strlcpy(altCallingStation, settings[F("altCallingStation")], sizeof(altCallingStation));
 
         if (settings[F("busId")].is<const char*>())      strlcpy(busAtco, settings[F("busId")], sizeof(busAtco));
         if (settings[F("busName")].is<const char*>())    busName = String(settings[F("busName")]);
         if (settings[F("busLat")].is<float>())           busLat = settings[F("busLat")];
         if (settings[F("busLon")].is<float>())           busLon = settings[F("busLon")];
+        if (settings[F("busFilter")].is<const char*>())  strlcpy(busFilter, settings[F("busFilter")], sizeof(busFilter));
 
         if (settings[F("noScroll")].is<bool>())          noScrolling = settings[F("noScroll")];
+        if (settings[F("flip")].is<bool>())              flipScreen = settings[F("flip")];
+        if (settings[F("TZ")].is<const char*>())         timezone = settings[F("TZ")].as<String>();
       } else {
         // JSON deserialization failed - TODO
       }
@@ -977,6 +989,8 @@ bool setAlternateStation() {
     strcpy(crsCode,altCrsCode);
     stationLat = altLat;
     stationLon = altLon;
+    strcpy(callingCrsCode, altCallingCrsCode);
+    strcpy(callingStation, altCallingStation);
     return true;
   } else {
     return false;
@@ -989,6 +1003,13 @@ void softResetBoard() {
 
   // Reload the settings
   loadConfig();
+  if (flipScreen) u8g2.setFlipMode(1); else u8g2.setFlipMode(0);
+  if (timezone!="") {
+    setenv("TZ",timezone.c_str(),1);
+  } else {
+    setenv("TZ",ukTimezone,1);
+  }
+  tzset();
   u8g2.clearBuffer();
   drawStartupHeading();
   u8g2.updateDisplay();
@@ -1070,6 +1091,8 @@ void softResetBoard() {
 
     case MODE_BUS:
       progressBar(F("Initialising BusTimes interface"),70);
+      // Create a cleaned filter
+      busdata->cleanFilter(busFilter,cleanBusFilter,sizeof(busFilter));
       break;
   }
   station.numServices=0;
@@ -1564,7 +1587,7 @@ void drawUndergroundBoard() {
  */
 bool getBusDeparturesBoard() {
   if (!firstLoad) showUpdateIcon(true);
-  lastUpdateResult = busdata->updateDepartures(&station,busAtco,&tflCallback);
+  lastUpdateResult = busdata->updateDepartures(&station,busAtco,cleanBusFilter,&tflCallback);
   nextDataUpdate = millis()+BUSDATAUPDATEINTERVAL; // default update freq
   if (lastUpdateResult == UPD_SUCCESS || lastUpdateResult == UPD_NO_CHANGE) {
     showUpdateIcon(false);
@@ -1827,8 +1850,8 @@ void handleSaveSettings() {
   if ((server.method() == HTTP_POST) && (server.hasArg("plain"))) {
     newJSON = server.arg("plain");
     saveFile(F("/config.json"),newJSON);
-    if (!crsCode[0] && !tubeId[0]) {
-      // First time setup, we need a full reboot
+    if ((!crsCode[0] && !tubeId[0]) || server.hasArg("reboot")) {
+      // First time setup or base config change, we need a full reboot
       sendResponse(200,F("Configuration saved. The system will now restart."));
       delay(1000);
       ESP.restart();
@@ -1862,7 +1885,7 @@ void handleFileList() {
   if (!server.hasArg("dir")) path="/"; else path = server.arg("dir");
   File root = LittleFS.open(path);
 
-  String output=F("<html><body>");
+  String output=F("<html><body style=\"font-family:Helvetica,Arial,sans-serif\"><h2>Departures Board File System</h2>");
   if (!root) {
     output+=F("<p>Failed to open directory</p>");
   } else if (!root.isDirectory()) {
@@ -1873,9 +1896,9 @@ void handleFileList() {
     while (file) {
       output+=F("<tr><td>");
       if (file.isDirectory()) {
-        output+="[DIR]</td><td><a href=\"/rmdir?f=" + String(file.path()) + F("\">X</a></td><td><a href=\"/dir?dir=") + String(file.path()) + F("\">") + String(file.name()) + F("</a></td></tr>");
+        output+="[DIR]</td><td><a href=\"/rmdir?f=" + String(file.path()) + F("\" title=\"Delete\">X</a></td><td><a href=\"/dir?dir=") + String(file.path()) + F("\">") + String(file.name()) + F("</a></td></tr>");
       } else {
-        output+=String(file.size()) + F("</td><td><a href=\"/del?f=")+ String(file.path()) + F("\">X</a></td><td><a href=\"/cat?f=") + String(file.path()) + F("\">") + String(file.name()) + F("</a></td></tr>");
+        output+=String(file.size()) + F("</td><td><a href=\"/del?f=")+ String(file.path()) + F("\" title=\"Delete\">X</a></td><td><a href=\"/cat?f=") + String(file.path()) + F("\">") + String(file.name()) + F("</a></td></tr>");
       }
       file = root.openNextFile();
     }
@@ -1963,7 +1986,6 @@ void handleNotFound() {
   else if (server.uri() == F("/btlogo.webp")) handleStreamFlashFile(server.uri(), btlogo, sizeof(btlogo));
   else if (server.uri() == F("/tube.webp")) handleStreamFlashFile(server.uri(), tubeicon, sizeof(tubeicon));
   else if (server.uri() == F("/nr.webp")) handleStreamFlashFile(server.uri(), nricon, sizeof(nricon));
-  else if (server.uri() == F("/favicon.svg")) handleStreamFlashFile(server.uri(), favicon, sizeof(favicon));
   else if (server.uri() == F("/favicon.png")) handleStreamFlashFile(server.uri(), faviconpng, sizeof(faviconpng));
   else sendResponse(404,F("Not Found"));
 }
@@ -2625,13 +2647,9 @@ void setup(void) {
   u8g2.setFontMode(1);                // Transparent fonts
   u8g2.setFontRefHeightAll();         // Count entire font height
   u8g2.setFontPosTop();               // Reference from top
-
-  u8g2.drawXBM(81,0,gadeclogo_width,gadeclogo_height,gadeclogo_bits);
   u8g2.setFont(NatRailTall12);
   String buildDate = String(__DATE__);
   String notice = "\x80 " + buildDate.substring(buildDate.length()-4) + F(" Gadec Software (github.com/gadec-uk)");
-  centreText(notice.c_str(),48);
-  u8g2.sendBuffer();                  // Send to OLED display
 
   bool isFSMounted = LittleFS.begin(true);    // Start the File System, format if necessary
   strcpy(station.location,"");                // No default location
@@ -2641,6 +2659,11 @@ void setup(void) {
   loadApiKeys();                              // Load the API keys from the apiKeys.json
   loadConfig();                               // Load the configuration settings from config.json
   u8g2.setContrast(brightness);               // Set the panel brightness to the user saved level
+  if (flipScreen) u8g2.setFlipMode(1);
+  u8g2.clearBuffer();
+  u8g2.drawXBM(81,0,gadeclogo_width,gadeclogo_height,gadeclogo_bits);
+  centreText(notice.c_str(),48);
+  u8g2.sendBuffer();
   delay(5000);
 
   u8g2.clearBuffer();
@@ -2772,8 +2795,12 @@ void setup(void) {
   checkPostWebUpgrade();
 
   configTime(0,0, ntpServer);                 // Configure NTP server for setting the clock
-  setenv("TZ","GMT0BST,M3.5.0/1,M10.5.0",1);  // Configure UK TimeZone
+  setenv("TZ",ukTimezone,1);  // Configure UK TimeZone (default and fallback if custom is invalid)
   tzset();                                    // Set the TimeZone
+  if (timezone!="") {
+    setenv("TZ",timezone.c_str(),1);
+    tzset();
+  }
 
   // Check the clock has been set successfully before continuing
   int p=50;
@@ -2809,12 +2836,14 @@ void setup(void) {
       }
       progressBar(F("Initialising National Rail interface"),70);
   } else if (boardMode == MODE_TUBE) {
-      tfldata = new TfLdataClient();
       progressBar(F("Initialising TfL interface"),70);
+      tfldata = new TfLdataClient();
       startupProgressPercent=70;
   } else if (boardMode == MODE_BUS) {
-      busdata = new busDataClient();
       progressBar(F("Initialising BusTimes interface"),70);
+      busdata = new busDataClient();
+      // Create a cleaned filter
+      busdata->cleanFilter(busFilter,cleanBusFilter,sizeof(busFilter));
       startupProgressPercent=70;
   }
 }

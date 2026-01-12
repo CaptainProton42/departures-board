@@ -10,7 +10,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes"/>
     <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
     <link rel="apple-touch-icon" href="favicon.png">
-    <link rel="icon" href="favicon.svg" type="image/svg+xml"/>
+    <link rel="icon" href="favicon.png" type="image/png"/>
     <title>Departures Board</title>
 </head>
 <body>
@@ -71,6 +71,12 @@
             </div>
           </div>
           <span class="help-block" id="busAtcoLongName"></span>
+
+          <div id="busFilterBox" style="margin-bottom:10px; display:none">
+            <label class="control-label" for="busFilter">Only show these Bus services</label>
+            <input id="busFilter" type="text" maxlength="24" placeholder="Enter comma separated service numbers or blank for all" class="form-control input-md">
+          </div>
+
           <div id="busAtcoHistory" style="display:none">
             <label for="busAtcoHistoryList">Recently verified ATCO codes</label>
             <div style="display: flex; gap: 10px;">
@@ -110,64 +116,29 @@
               <button id="clearAltStation" name="clearAltStation" class="btn" type="button">Clear</button>
             </div>
           </div>
-          <div class="form-group" id="altStationTimeSelectors" style="padding-top: 10px;">
+
+          <div class="form-group" id="nrAltCallingBox" style="padding-top:10px; display:none">
+            <label class="control-label" for="altCallingStation">Only show services calling at (alternate active)</label>
+            <div style="display: flex; gap: 10px;">
+              <div style="flex: 1;">
+                <input id="altCallingStation" type="text" placeholder="Station name or leave blank for all services" class="form-control input-md typeahead" style="width:100%;">
+              </div>
+              <div style="flex-shrink: 0;">
+                <button id="altClearFilter" name="altClearFilter" class="btn" type="button">Clear</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group" id="altStationTimeSelectors" style="display:none;">
             <div style="display: flex; gap: 10px;">
               <div style="flex: 1;">
                 <label for="altStart">Show alternate from</label>
-                <select id="altStart" class="form-control" disabled>
-                  <option value="0">0:00</option>
-                  <option value="1">1:00</option>
-                  <option value="2">2:00</option>
-                  <option value="3">3:00</option>
-                  <option value="4">4:00</option>
-                  <option value="5">5:00</option>
-                  <option value="6">6:00</option>
-                  <option value="7">7:00</option>
-                  <option value="8">8:00</option>
-                  <option value="9">9:00</option>
-                  <option value="10">10:00</option>
-                  <option value="11">11:00</option>
-                  <option value="12">12:00</option>
-                  <option value="13">13:00</option>
-                  <option value="14">14:00</option>
-                  <option value="15">15:00</option>
-                  <option value="16">16:00</option>
-                  <option value="17">17:00</option>
-                  <option value="18">18:00</option>
-                  <option value="19">19:00</option>
-                  <option value="20">20:00</option>
-                  <option value="21">21:00</option>
-                  <option value="22">22:00</option>
-                  <option value="23">23:00</option>
+                <select id="altStart" class="form-control">
                 </select>
               </div>
               <div style="flex: 1;">
                 <label for="altEnd">Show default from</label>
-                <select id="altEnd" class="form-control" disabled>
-                  <option value="0">0:00</option>
-                  <option value="1">1:00</option>
-                  <option value="2">2:00</option>
-                  <option value="3">3:00</option>
-                  <option value="4">4:00</option>
-                  <option value="5">5:00</option>
-                  <option value="6">6:00</option>
-                  <option value="7">7:00</option>
-                  <option value="8">8:00</option>
-                  <option value="9">9:00</option>
-                  <option value="10">10:00</option>
-                  <option value="11">11:00</option>
-                  <option value="12">12:00</option>
-                  <option value="13">13:00</option>
-                  <option value="14">14:00</option>
-                  <option value="15">15:00</option>
-                  <option value="16">16:00</option>
-                  <option value="17">17:00</option>
-                  <option value="18">18:00</option>
-                  <option value="19">19:00</option>
-                  <option value="20">20:00</option>
-                  <option value="21">21:00</option>
-                  <option value="22">22:00</option>
-                  <option value="23">23:00</option>
+                <select id="altEnd" class="form-control">
                 </select>
               </div>
             </div>
@@ -198,70 +169,32 @@
             <label><input type="checkbox" id="noScrolling"> Suppress calling at / information messages</label>
           </div>
           <div class="checkbox">
+            <label><input type="checkbox" id="optFlip"> Flip the display 180&deg;</label>
+          </div>
+          <div class="checkbox">
+            <label><input type="checkbox" id="optTZ"> Custom (non-UK) time zone (only for clock display)</label>
+          </div>
+          <div id="customTZbox" style="display:none;">
+            <input id="customTZ" type="text" maxlength="24" placeholder="Enter the POSIX time zone string or leave blank for UK" class="form-control input-md">
+            <span class="help-block">Enter the exact POSIX time zone. Tap <a href="https://github.com/gadec-uk/departures-board/#custom-time-zones" target="_blank">here</a> for help.</span>
+          </div>
+          <div class="checkbox">
             <label><input type="checkbox" id="enableFirmware"> Enable automatic firmware updates at startup</label>
           </div>
           <div class="checkbox">
             <label><input type="checkbox" id="enableSleep"> Enable overnight sleep mode (screensaver)</label>
           </div>
         </div>
-        <div class="form-group" id="sleepTimeSelectors">
+        <div class="form-group" id="sleepTimeSelectors" style="display:none">
           <div style="display: flex; gap: 10px;">
             <div style="flex: 1;">
               <label for="sleepStart">Sleep start hour</label>
-              <select id="sleepStart" class="form-control" disabled>
-                <option value="0">0:00</option>
-                <option value="1">1:00</option>
-                <option value="2">2:00</option>
-                <option value="3">3:00</option>
-                <option value="4">4:00</option>
-                <option value="5">5:00</option>
-                <option value="6">6:00</option>
-                <option value="7">7:00</option>
-                <option value="8">8:00</option>
-                <option value="9">9:00</option>
-                <option value="10">10:00</option>
-                <option value="11">11:00</option>
-                <option value="12">12:00</option>
-                <option value="13">13:00</option>
-                <option value="14">14:00</option>
-                <option value="15">15:00</option>
-                <option value="16">16:00</option>
-                <option value="17">17:00</option>
-                <option value="18">18:00</option>
-                <option value="19">19:00</option>
-                <option value="20">20:00</option>
-                <option value="21">21:00</option>
-                <option value="22">22:00</option>
-                <option value="23">23:00</option>
+              <select id="sleepStart" class="form-control">
               </select>
             </div>
             <div style="flex: 1;">
               <label for="sleepEnd">Sleep end hour</label>
-              <select id="sleepEnd" class="form-control" disabled>
-                <option value="0">0:00</option>
-                <option value="1">1:00</option>
-                <option value="2">2:00</option>
-                <option value="3">3:00</option>
-                <option value="4">4:00</option>
-                <option value="5">5:00</option>
-                <option value="6">6:00</option>
-                <option value="7">7:00</option>
-                <option value="8">8:00</option>
-                <option value="9">9:00</option>
-                <option value="10">10:00</option>
-                <option value="11">11:00</option>
-                <option value="12">12:00</option>
-                <option value="13">13:00</option>
-                <option value="14">14:00</option>
-                <option value="15">15:00</option>
-                <option value="16">16:00</option>
-                <option value="17">17:00</option>
-                <option value="18">18:00</option>
-                <option value="19">19:00</option>
-                <option value="20">20:00</option>
-                <option value="21">21:00</option>
-                <option value="22">22:00</option>
-                <option value="23">23:00</option>
+              <select id="sleepEnd" class="form-control">
               </select>
             </div>
           </div>
@@ -308,6 +241,8 @@
       busLat: 0,
       busLon: 0,
       busIdOK: false,
+      busFilter: "",
+      busFilterOK: true,
       boardMode: 0, //0=Rail, 1=Tube, 2=Bus
       appKey: "",
       stationLatitude: 0,
@@ -322,6 +257,11 @@
       altLongitude: 0,
       altStarts: 0,
       altEnds: 23,
+      altCallingStationSelected: false,
+      altCallingStation: "",
+      altCallingCrs: "",
+      tzOK: true,
+      needRestart: false,
       firmwareVersion: "",
       jsonSettings: {},
       atcoHistory: []
@@ -332,6 +272,7 @@
       searchName: document.getElementById("searchName"),
       searchNameTfL: document.getElementById("searchNameTfL"),
       callingStation: document.getElementById("callingStation"),
+      altCallingStation: document.getElementById("altCallingStation"),
       brightness: document.getElementById("brightness"),
       enableSleep: document.getElementById("enableSleep"),
       sleepStart: document.getElementById("sleepStart"),
@@ -341,16 +282,40 @@
       fwinfo: document.getElementById("fwinfo"),
       altStation: document.getElementById("altStation"),
       clearAltButton: document.getElementById("clearAltStation"),
+      altClearButton: document.getElementById("altClearFilter"),
       altStart: document.getElementById("altStart"),
       altEnd: document.getElementById("altEnd"),
       verifyAtcoButton: document.getElementById("verifyAtco"),
       busAtco: document.getElementById("busAtco"),
       busLongName: document.getElementById("busAtcoLongName"),
+      busFilter: document.getElementById("busFilter"),
       clearHistoryButton: document.getElementById("clearHistory"),
-      busAtcoHistoryList: document.getElementById("busAtcoHistoryList")
+      busAtcoHistoryList: document.getElementById("busAtcoHistoryList"),
+      optFlip: document.getElementById("optFlip"),
+      optTZ: document.getElementById("optTZ"),
+      customTZ: document.getElementById("customTZ")
     };
 
+    const busFilterError = "Please enter a valid list of bus services to filter on, or leave blank for all services.";
+    const tzError = "Please enter a valid POSIX format timezone string or uncheck the \"Custom timezone\" option to use UK time.";
     const MAX_BUS_ATCOS = 10;
+
+    function populateHoursSelect(selectId) {
+      const select = document.getElementById(selectId);
+      if (!select) return;
+      select.innerHTML = "";
+      for (let hour=0; hour<24; hour++) {
+        const option = document.createElement("option");
+        option.value = hour;
+        option.textContent = String(hour).padStart(2, "0") + ":00";
+        select.appendChild(option);
+      }
+    }
+
+    populateHoursSelect("altStart");
+    populateHoursSelect("altEnd");
+    populateHoursSelect("sleepStart");
+    populateHoursSelect("sleepEnd");
 
     async function fetchAtcoHistory() {
       try {
@@ -442,6 +407,7 @@
 
       elements.busLongName.innerHTML = "Location: <b>" + saved.name + "</b>";
       elements.saveButton.removeAttribute("disabled");
+      toggleBusFilterBox();
     }
 
     async function handleClearHistory() {
@@ -450,6 +416,40 @@
         } catch {}
         appState.atcoHistory = [];
         renderAtcoHistory();
+    }
+
+    function validateBusFilter() {
+      const input = document.getElementById("busFilter").value.trim();
+      appState.busFilterOK = true;
+
+      if (!input.length) {
+        appState.busFilter = "";
+        return;
+      }
+
+      if (input.includes('"')) {
+        alert('Double quotes (") are not allowed in the bus service list.');
+        appState.busFilterOK = false;
+        return;
+      }
+
+      const csvRegex = /^[^,\s]+(\s*,\s*[^,\s]+)*$/;
+      if (!csvRegex.test(input)) {
+        alert(busFilterError);
+        appState.busFilterOK = false;
+        return;
+      }
+      appState.busFilter = input;
+    }
+
+    function validateTZ() {
+        const regex = /^([A-Za-z]{3,})([+-]?(?:[0-9]|1[0-4])(?::[0-5][0-9])?(?::[0-5][0-9])?)?([A-Za-z]{3,})?(?:,M(0?[1-9]|1[0-2])\.(?:[1-4]|5)\.[0-6](?:\/(?:[0-9]|1[0-9]|2[0-4]))?,M(0?[1-9]|1[0-2])\.(?:[1-4]|5)\.[0-6](?:\/(?:[0-9]|1[0-9]|2[0-4]))?)?$/;
+        const value = elements.customTZ.value.trim();
+        appState.tzOK = true;
+        if (!value.length) return;
+        if (regex.test(value)) return;
+        appState.tzOK = false;
+        alert(tzError);
     }
 
     const substringMatcher = () => {
@@ -518,6 +518,18 @@
       }
     });
 
+    $(elements.altCallingStation).typeahead({
+      name: 'stations',
+      source: substringMatcher(),
+      updater: function(item) {
+        handleAltCallingStationSelected(item);
+        return item;
+      },
+      highlighter: function(item) {
+        return '<img src="/nr.webp" style="margin-right:6px">' + item;
+      }
+    });
+
     $(elements.altStation).typeahead({
       name: 'stations',
       source: substringMatcher(),
@@ -545,24 +557,32 @@
     // Prevent default submit and call handleSave only once
     elements.form.addEventListener("submit", function (e) {
       e.preventDefault();
-      handleSave();
+      if (!appState.busFilterOK) alert(busFilterError);
+      else if (!appState.tzOK) alert(tzError);
+      else handleSave();
     });
 
     elements.searchName.addEventListener("focus", () => elements.searchName.select());
     elements.searchName.addEventListener("blur", () => setTimeout(handleStationLostFocus, 500));
     elements.callingStation.addEventListener("focus", () => elements.callingStation.select());
     elements.callingStation.addEventListener("blur", () => setTimeout(handleCallingStationLostFocus, 500));
+    elements.altCallingStation.addEventListener("focus", () => elements.altCallingStation.select());
+    elements.altCallingStation.addEventListener("blur", () => setTimeout(handleAltCallingStationLostFocus, 500));
     elements.searchNameTfL.addEventListener("focus", () => elements.searchNameTfL.select());
     elements.searchNameTfL.addEventListener("blur", () => setTimeout(handleTfLStationLostFocus, 500));
     elements.enableSleep.addEventListener("change", toggleSleepSelectors);
     elements.brightness.addEventListener("change", handleBrightnessChange);
     elements.clearButton.addEventListener("click", handleClearFilter);
+    elements.altClearButton.addEventListener("click", handleAltClearFilter);
     elements.altStation.addEventListener("focus", () => elements.altStation.select());
     elements.altStation.addEventListener("blur", () => setTimeout(handleAltStationLostFocus, 500));
     elements.clearAltButton.addEventListener("click", handleClearAltStation);
     elements.verifyAtcoButton.addEventListener("click", handleVerifyAtco);
     elements.clearHistoryButton.addEventListener("click", handleClearHistory);
     elements.busAtcoHistoryList.addEventListener('change', handleAtcoHistorySelect);
+    elements.busFilter.addEventListener("blur", validateBusFilter);
+    elements.optTZ.addEventListener("change", () => show("customTZbox",isChecked("optTZ")));
+    elements.customTZ.addEventListener("blur",validateTZ);
 
     document.addEventListener("DOMContentLoaded", async () => {
       await fetchConfig();
@@ -657,24 +677,29 @@
           elements.busLongName.innerHTML = "Location: <b>" + appState.busName + "</b>";
           saveRecentBusAtco(userAtco, appState.busName, appState.busLat, appState.busLon);
           elements.saveButton.removeAttribute("disabled");
+          toggleBusFilterBox();
         } else {
           elements.saveButton.setAttribute("disabled", true);
           elements.busLongName.innerHTML = "";
           appState.busIdOK = false;
+          toggleBusFilterBox();
           alert("The Bus Stop ATCO code you entered could not be found.");
         }
     }
 
     function toggleSleepSelectors() {
       const enabled = elements.enableSleep.checked;
-      elements.sleepStart.disabled = !enabled;
-      elements.sleepEnd.disabled = !enabled;
+      show("sleepTimeSelectors",enabled);
     }
 
     function toggleAltSelectors() {
       const enabled = appState.altCrs;
-      elements.altStart.disabled = !enabled;
-      elements.altEnd.disabled = !enabled;
+      show("altStationTimeSelectors",enabled);
+      show("nrAltCallingBox",enabled);
+    }
+
+    function toggleBusFilterBox() {
+      show("busFilterBox",appState.busIdOK);
     }
 
     function applyBoardMode() {
@@ -734,6 +759,7 @@
         elements.saveButton.setAttribute("disabled", true);
         elements.busLongName.innerHTML="";
         appState.busIdOK = false;
+        toggleBusFilterBox();
     });
 
     function loadSettings() {
@@ -745,6 +771,8 @@
 
       appState.callingStation = s.callingStation || "";
       appState.callingCrs = s.callingCrs || "";
+      appState.altCallingStation = s.altCallingStation || "";
+      appState.altCallingCrs = s.altCallingCrs || "";
 
       appState.tubeName = s.tubeName || "";
       appState.tubeId = s.tubeId || "";
@@ -754,15 +782,18 @@
       appState.busLat = s.busLat || 0;
       appState.busLon = s.busLon || 0;
       appState.busIdOK = appState.busId.length > 0 && appState.busName.length > 0;
-
+      appState.busFilter = s.busFilter || "";
       appState.boardMode = s.mode ?? (s.tube != undefined ? (s.tube ? 1 : 0) : 0);  //handle legacy
       delete s.tube;
       highlightModeButtons(appState.boardMode);
       applyBoardMode();
       elements.searchName.value = appState.stationName;
       elements.callingStation.value = appState.callingStation;
+      elements.altCallingStation.value = appState.altCallingStation;
+      show("nrAltCallingBox",appState.altCallingCrs.length);
       elements.searchNameTfL.value = appState.tubeName;
       elements.busAtco.value = appState.busId;
+      elements.busFilter.value = appState.busFilter;
       elements.brightness.value = s.brightness || 50;
       const pct = (elements.brightness.value/255)*100;
       elements.brightness.title = Math.round(pct) + "%";
@@ -776,6 +807,10 @@
       elements.altStation.value = appState.altStation;
 
       if (appState.busName.length) elements.busLongName.innerHTML = "Location: <b>" + appState.busName + "</b>";
+      toggleBusFilterBox();
+      elements.customTZ.value = s.TZ || "";
+      setCheckbox("optTZ", elements.customTZ.value.length);
+      show("customTZbox", elements.customTZ.value.length);
 
       setCheckbox("enableSleep", s.sleep);
       setCheckbox("showDate", s.showDate);
@@ -784,6 +819,7 @@
       setCheckbox("enableWeather", s.weather);
       setCheckbox("enableFastRefresh", s.fastRefresh);
       setCheckbox("noScrolling", s.noScroll);
+      setCheckbox("optFlip", s.flip);
 
       $('#sleepStart').val(s.sleepStarts);
       $('#sleepEnd').val(s.sleepEnds);
@@ -816,7 +852,12 @@
       appState.callingStationSelected = true;
       appState.callingStation = item.name;
       appState.callingCrs = item.crsCode;
-      handleClearAltStation();
+    }
+
+    function handleAltCallingStationSelected(item) {
+      appState.altCallingStationSelected = true;
+      appState.altCallingStation = item.name;
+      appState.altCallingCrs = item.crsCode;
     }
 
     function handleAltStationSelected(item) {
@@ -825,7 +866,7 @@
       appState.altCrs = item.crsCode;
       appState.altLatitude = item.latitude;
       appState.altLongitude = item.longitude;
-      handleClearFilter();
+      //toggleAltCallingBox();
       toggleAltSelectors();
     }
 
@@ -854,6 +895,14 @@
       }
     }
 
+    function handleAltCallingStationLostFocus() {
+      if (!appState.altCallingStationSelected) {
+        elements.altCallingStation.value = appState.altCallingStation;
+      } else {
+        appState.altCallingStationSelected = false;
+      }
+    }
+
     function handleAltStationLostFocus() {
       if (!appState.altStationSelected) {
         elements.altStation.value = appState.altStation;
@@ -877,6 +926,13 @@
       elements.callingStation.value = appState.callingStation;
     }
 
+    function handleAltClearFilter() {
+      appState.altCallingCrs = "";
+      appState.altCallingStation = "";
+      appState.altCallingStationSelected = false;
+      elements.altCallingStation.value = appState.altCallingStation;
+    }
+
     function handleClearAltStation() {
       appState.altCrs = "";
       appState.altStation = "";
@@ -884,7 +940,9 @@
       appState.altLatitude = 0;
       appState.altLongitude = 0;
       elements.altStation.value = appState.altStation;
+      handleAltClearFilter();
       toggleAltSelectors();
+      toggleAltCallingBox();
     }
 
     function handleBrightnessChange() {
@@ -897,6 +955,7 @@
 
     async function handleSave() {
       const s = appState.jsonSettings;
+      if (!isChecked("optTZ")) elements.customTZ.value = "";
       s.station = appState.stationName;
       s.crs = appState.stationCRS;
       s.lat = appState.stationLatitude;
@@ -914,6 +973,7 @@
       s.weather = isChecked("enableWeather");
       s.fastRefresh = isChecked("enableFastRefresh");
       s.noScroll = isChecked("noScrolling");
+      s.flip = isChecked("optFlip");
       s.sleepStarts = parseInt(elements.sleepStart.value);
       s.sleepEnds = parseInt(elements.sleepEnd.value);
       s.altCrs = appState.altCrs;
@@ -922,14 +982,18 @@
       s.altLon = appState.altLongitude;
       s.altStarts = parseInt(elements.altStart.value);
       s.altEnds = parseInt(elements.altEnd.value);
+      s.altCallingStation = appState.altCallingStation;
+      s.altCallingCrs = appState.altCallingCrs;
       if (appState.busIdOK) {
         s.busName = appState.busName;
         s.busId = appState.busId;
         s.busLat = appState.busLat;
         s.busLon = appState.busLon;
+        s.busFilter = appState.busFilter;
       }
+      s.TZ = elements.customTZ.value
       try {
-        const response = await fetch('/savesettings', {
+        const response = await fetch(`/savesettings${appState.needRestart ? '?reboot=1' : ''}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(s)
@@ -969,8 +1033,20 @@
         }
 
         const parseVersion = (str) => {
-          const match = str.match(/B(\d+\.\d+)-W(\d+\.\d+)/);
-          return match ? { B: parseFloat(match[1]), W: parseFloat(match[2]) } : null;
+          const match = str.match(/B(\d+)\.(\d+)-W(\d+)\.(\d+)/);
+          return match
+            ? {
+                B: { major: Number(match[1]), minor: Number(match[2]) },
+                W: { major: Number(match[3]), minor: Number(match[4]) }
+              }
+            : null;
+        };
+
+        const isNewer = (latest, current) => {
+          if (latest.major !== current.major) {
+            return latest.major > current.major;
+          }
+          return latest.minor > current.minor;
         };
 
         const latest = parseVersion(latestTag);
@@ -981,7 +1057,7 @@
           return;
         }
 
-        if (latest.B > current.B || latest.W > current.W) {
+        if (isNewer(latest.B, current.B) || isNewer(latest.W, current.W)) {
           if (confirm(`An update to version ${latestTag} is available.\n\nBrief description: "${latestDesc}".\n\nClick \'OK\' to install the update now or \'Cancel\' to abort.`)) {
             fetch('/ota', { method: 'GET' })
               .then(res => res.text())

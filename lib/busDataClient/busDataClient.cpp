@@ -53,7 +53,74 @@ void busDataClient::replaceWord(char* input, const char* target, const char* rep
     }
 }
 
-int busDataClient::updateDepartures(rdStation *station, const char *locationId, busClientCallback Xcb) {
+// Trim leading and trailing spaces in-place
+void busDataClient::trim(char* &start, char* &end) {
+  while (start <= end && isspace(*start)) start++;
+  while (end >= start && isspace(*end)) end--;
+}
+
+// Compare strings case-insensitively
+bool busDataClient::equalsIgnoreCase(const char* a, int a_len, const char* b) {
+  for (int i = 0; i < a_len; i++) {
+    if (tolower(a[i]) != tolower(b[i])) return false;
+  }
+  return b[a_len] == '\0';
+}
+
+// Check if the service is in the filter list (if there is one)
+bool busDataClient::serviceMatchesFilter(const char* filter, const char* serviceId) {
+  if (filter == nullptr || filter[0] == '\0') return true; // empty filter = match all
+
+  const char* start = filter;
+  const char* ptr = filter;
+
+  while (true) {
+    if (*ptr == ',' || *ptr == '\0') {
+      const char* end = ptr - 1;
+      char* trimStart = const_cast<char*>(start);
+      char* trimEnd   = const_cast<char*>(end);
+      trim(trimStart, trimEnd);
+      int len = trimEnd - trimStart + 1;
+      if (len > 0 && equalsIgnoreCase(trimStart, len, serviceId)) {
+        return true;
+      }
+      if (*ptr == '\0') break;
+      ptr++;
+      start = ptr;
+    } else {
+      ptr++;
+    }
+  }
+
+  return false;
+}
+
+void busDataClient::cleanFilter(const char* rawFilter, char* cleanedFilter, size_t maxLen) {
+    if (!rawFilter || rawFilter[0] == '\0') {
+        if (maxLen > 0) cleanedFilter[0] = '\0';
+        return;
+    }
+
+    size_t j = 0;
+    const char* ptr = rawFilter;
+
+    while (*ptr != '\0' && j < maxLen - 1) {
+        if (*ptr == ',') {
+            cleanedFilter[j++] = ',';
+            ptr++;
+            continue;
+        }
+        if (!isspace(*ptr)) {
+            cleanedFilter[j++] = tolower(*ptr);
+        }
+        ptr++;
+    }
+
+    cleanedFilter[j] = '\0';
+    return;
+}
+
+int busDataClient::updateDepartures(rdStation *station, const char *locationId, const char *filter, busClientCallback Xcb) {
 
     unsigned long perfTimer=millis();
     long dataReceived = 0;
@@ -198,7 +265,7 @@ int busDataClient::updateDepartures(rdStation *station, const char *locationId, 
                                 if (dataColumns == 4) parseStep = PBT_EXPECTED; else {
                                     strcpy(xBusStop.service[id].expected,"");
                                     parseStep = PBT_HEADER;
-                                    id++;
+                                    if (serviceMatchesFilter(filter,xBusStop.service[id].lineName)) id++;
                                     if (id>=MAXBOARDSERVICES) maxServicesRead=true;
                                 }
                             } else if (line.substring(0,1)!="<") {
@@ -210,7 +277,7 @@ int busDataClient::updateDepartures(rdStation *station, const char *locationId, 
                         case PBT_EXPECTED:
                             if (line.indexOf("</td>")>=0) {
                                 parseStep = PBT_HEADER;
-                                id++;
+                                if (serviceMatchesFilter(filter,xBusStop.service[id].lineName)) id++;
                                 if (id>=MAXBOARDSERVICES) maxServicesRead=true;
                             }
                             else if (line.substring(0,1)!="<") {

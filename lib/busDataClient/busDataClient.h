@@ -49,16 +49,21 @@ class busDataClient: public JsonListener {
         String longName;
         bool maxServicesRead = false;
         busStop xBusStop;
+        char processedFilter[25]; // store cleaned lowercase filter
 
         String stripTag(String html);
         void replaceWord(char* input, const char* target, const char* replacement);
+        void trim(char* &start, char* &end);
+        bool equalsIgnoreCase(const char* a, int a_len, const char* b);
+        bool serviceMatchesFilter(const char* filter, const char* serviceId);
 
     public:
         String lastErrorMsg = "";
 
         busDataClient();
         int getStopLongName(const char *locationId, char *locationName);
-        int updateDepartures(rdStation *station, const char *locationId, busClientCallback Xcb);
+        void cleanFilter(const char* rawFilter, char* cleanedFilter, size_t maxLen);
+        int updateDepartures(rdStation *station, const char *locationId, const char *filter, busClientCallback Xcb);
 
         virtual void whitespace(char c);
         virtual void startDocument();

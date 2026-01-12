@@ -12,21 +12,20 @@ This is an ESP32 based mini Departures Board replicating those at many UK railwa
 * Train information (operator, class, number of coaches etc.)
 * Displays up to the next 9 arrivals with time to station (London Underground mode)
 * TfL station and network service messages (London Underground mode)
-* **New Bus mode** - Displays up to the next 9 departures with service number, destination, vehicle registration and schedule/expected time (requires **firmware v1.8 or above**)
+* **New Bus mode** - Displays up to the next 9 departures with service number, destination, vehicle registration and schedule/expected time
 * Fully-featured Web UI - choose any station on the UK network / London Tube & DLR network / UK Bus Stops
 * Automatic firmware updates (optional)
 * Displays the weather at the selected location (optional)
 * STL files provided for custom 3D printed case
 
-This short video demonstrates the Departures Board in action...
-[![Departures Board Demo Video](https://github.com/user-attachments/assets/409b9a82-33a9-4351-ac87-f7e44ac56795)](https://youtu.be/N3pHk6yqwvo)
+![Image](https://github.com/user-attachments/assets/6ce61d63-7d64-43c7-b7f4-8f0893a5d708)
 
 ## Quick Start
 
 ### What you'll need
 
-1. An ESP32 D1 Mini board (or clone) - either USB-C or Micro-USB version with CH9102 recommended. Cost around £2 from [AliExpress](https://www.aliexpress.com/item/1005005972627549.html).
-2. A 3.12" 256x64 OLED Display Panel with SSD1322 display controller onboard. Cost around £8 from [AliExpress](https://www.aliexpress.com/item/1005008558326731.html).
+1. An ESP32 D1 Mini board (or clone) - either USB-C or Micro-USB version with CH9102 recommended. Cost around £4 from [AliExpress](https://www.aliexpress.com/item/1005005972627549.html).
+2. A 3.12" 256x64 OLED Display Panel with SSD1322 display controller onboard. Cost around £12 from [AliExpress](https://www.aliexpress.com/item/1005008558326731.html).
 3. A 3D printed case using the [STL](https://github.com/gadec-uk/departures-board/tree/main/stl) files provided. If you don't have a 3D printer, there are several services you can use to get one printed.
 4. A National Rail Darwin Lite API token (these are free of charge - request one [here](https://realtime.nationalrail.co.uk/OpenLDBWSRegistration)).
 5. Optionally, an OpenWeather Map API token to display weather conditions at the selected station (these are also free, sign-up for a free developer account [here](https://home.openweathermap.org/users/sign_up)).
@@ -84,8 +83,8 @@ Subsequent updates can be carried out automatically over-the-air or you can manu
 
 ### First time configuration
 
-WiFiManager is used to setup the initial WiFi connection on first boot. The ESP32 will broadcast a temporary WiFi network named "Departures Board", connect to the network and follow the on-screen instuctions. You can also watch a video walkthrough of the entire process below.
-[![Departures Board Setup Video](https://github.com/user-attachments/assets/176f0489-d846-42de-913f-eb838d9ab941)](https://youtu.be/bMyI56zwHyc)
+WiFiManager is used to setup the initial WiFi connection on first boot. The ESP32 will broadcast a temporary WiFi network named "Departures Board", connect to the network and follow the on-screen instuctions. You can also watch a video walkthrough of setup and configuration process below.
+[![Departures Board Setup Video](https://github.com/user-attachments/assets/176f0489-d846-42de-913f-eb838d9ab941)](https://youtu.be/PZVyE_SoLBU)
 
 Once the ESP32 has established an Internet connection, the next step is to enter your API keys (you must provide at least one of the following: a National Rail token or a Transport for London API key). Finally, select a station location. Start typing the location name and valid choices will be displayed as you type.
 
@@ -94,8 +93,9 @@ Once the ESP32 has established an Internet connection, the next step is to enter
 At start-up, the ESP32's IP address is displayed. To change the station or to configure other miscellaneous settings, open the web page at that address. The settings available are:
 - **Board Mode** - switch between National Rail Departures, London Underground Arrivals or UK Bus Stops modes (**firmware v1.8 or above**)
 - **Station** - start typing a few characters of a station name and select from the drop-down station picker displayed (National Rail mode).
-- **Only show services calling at** - filter services based on *calling at* location (National Rail mode - if you want to see the next trains *to* a particular station). Note this option cannot be combined with the *Alternate station* feature.
+- **Only show services calling at** - filter services based on *calling at* location (National Rail mode - if you want to see the next trains *to* a particular station).
 - **Alternate station** - automatically switch to displaying an alternate station between the hours set here (National Rail mode).
+- **Only show services calling at (alternate active)** - as above, but applies when the alternate station is active.
 - **Underground Station** - start typing a few characters of an Underground or DLR station name and select from the drop-down station picker displayed (London Underground mode).
 - **Bus Stop ATCO code** - Type the ATCO number of the bus stop you want to monitor (see [below](#bus-stop-atco-codes) for details).
 - **Brightness** - adjusts the brightness of the OLED screen.
@@ -104,6 +104,8 @@ At start-up, the ESP32's IP address is displayed. To change the station or to co
 - **Include current weather at station location** - this option requires a valid OpenWeather Map API key (National Rail/Bus mode).
 - **Increase API refresh rate** - Reduces the interval between data refreshes (National Rail mode). Uses more data and is not usually required.
 - **Suppress calling at / information messages** - removes all horizontally scrolling text (much lower functionality but less distracting).
+- **Flip the display 180°** - Rotates the display (the case design provides two different viewing angles depending on orientation).
+- **Custom (non-UK) time zone (only for clock)** - if you're not based in the UK you can set the clock to display in your local time zone (see [below](#custom-time-zones) for details).
 - **Enable automatic firmware updates at startup** - automatically checks for AND installs the latest firmware from this repository.
 - **Enable overnight sleep mode (screensaver)** - if you're running the board 24/7, you can help prevent screen burn-in by enabling this option overnight.
 
@@ -119,7 +121,7 @@ A few other urls have been implemented, primarily for debugging/developer use:
 - **/factoryreset** - deletes all configuration information, api keys and WiFi credentials. The entire setup process will need to be repeated.
 - **/update** - for manual firmware updates. Download the latest binary from the [releases](https://github.com/gadec-uk/departures-board/releases). Only the **firmware.bin** file should be uploaded via */update*. The other .bin files are not used for upgrades. This method is *not* recommended for normal use.
 - **/info** - displays some basic information about the current running state.
-- **/formatffs** - formats the filing system, erasing the configuration & Web GUI (but not the WiFi credentials).
+- **/formatffs** - formats the filing system, erasing the configuration files (but not the WiFi credentials).
 - **/dir** - displays a (basic) directory listing of the file system with the ability to view/delete files.
 - **/upload** - upload a file to the file system.
 
@@ -127,6 +129,9 @@ A few other urls have been implemented, primarily for debugging/developer use:
 Every UK bus stop has a unique ATCO code number. To find the ATCO code of the stop you want to monitor, go to [bustimes.org/search](https://bustimes.org/search) and type a location in the search box. Select the location from the list of places shown and then select the particular stop you want from the list. The ATCO code is shown on the stop information page. After entering the code in the Departures Board setup screen, tap the **Verify** button and the location will be shown confirming your selection. You must use the **Verify** button *before* you can save changes. Up to ten of the most recently verified ATCO codes are saved and can be selected from a dropdown list for quick access.
 
 <img src="https://github.com/user-attachments/assets/8a41ec6d-5f15-4102-b3d5-c09260986319" align="center">
+
+### Custom Time Zones
+To set a custom time zone for the departure board clock, you will need to enter the POSIX time zone string for your location. Some examples are `CST6CDT,M3.2.0/2,M11.1.0/2` for Canada (Central Time) and `AEST-10AEDT,M10.1.0,M4.1.0/3` for Australia (Eastern Time). The easiest way to find the correct syntax is to ask your favourite AI chat engine *"What is the POSIX time zone string for ..."*. Note that changing the time zone only affects the clock (and date) display. Service times are *always* shown in UK time.
 
 ### Donating
 
