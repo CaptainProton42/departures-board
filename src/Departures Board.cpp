@@ -18,9 +18,13 @@
  *
  */
 
-// Release version number
+// Release version number 
 #define VERSION_MAJOR 2
 #define VERSION_MINOR 0
+
+#include "esp_eap_client.h"
+
+#include "../credentials.h"
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -122,7 +126,7 @@ static const char successPage[] PROGMEM =
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 #define DIMMED_BRIGHTNESS 1 // OLED display brightness level when in sleep/screensaver mode
 
-U8G2_SSD1322_NHD_256X64_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ 26, /* dc=*/ 5, /* reset=*/ U8X8_PIN_NONE);
+U8G2_SSD1322_NHD_256X64_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ 13, /* dc=*/ 12, /* reset=*/ U8X8_PIN_NONE);
 
 // Vertical line positions on the OLED display (National Rail)
 #define LINE0 0
@@ -292,7 +296,7 @@ bool sleepEnabled = false;          // Is overnight sleep enabled?
 bool dateEnabled = false;           // Showing the date on screen?
 bool weatherEnabled = false;        // Showing weather at station location. Requires an OpenWeatherMap API key.
 bool enableBus = false;             // Include Bus services on the board?
-bool firmwareUpdates = true;        // Check for and install firmware updates automatically at boot?
+bool firmwareUpdates = false;        // Check for and install firmware updates automatically at boot?
 byte sleepStarts = 0;               // Hour at which the overnight sleep (screensaver) begins
 byte sleepEnds = 6;                 // Hour at which the overnight sleep (screensaver) ends
 int brightness = 50;                // Initial brightness level of the OLED screen
@@ -939,7 +943,7 @@ void loadConfig() {
         if (settings[F("fastRefresh")].is<bool>())       apiRefreshRate = settings[F("fastRefresh")] ? FASTDATAUPDATEINTERVAL : DATAUPDATEINTERVAL;
         if (settings[F("weather")].is<bool>() && openWeatherMapApiKey.length())
                                                     weatherEnabled = settings[F("weather")];
-        if (settings[F("update")].is<bool>())            firmwareUpdates = settings[F("update")];
+        //if (settings[F("update")].is<bool>())            firmwareUpdates = settings[F("update")];
         if (settings[F("sleepStarts")].is<int>())        sleepStarts = settings[F("sleepStarts")];
         if (settings[F("sleepEnds")].is<int>())          sleepEnds = settings[F("sleepEnds")];
         if (settings[F("brightness")].is<int>())         brightness = settings[F("brightness")];
@@ -2670,10 +2674,75 @@ void setup(void) {
   drawStartupHeading();
   u8g2.sendBuffer();
   progressBar(F("Connecting to Wi-Fi"),20);
+
+  // TODO: Use https://github.com/JeroenBeemster/ESP32-WPA2-enterprise/blob/master/ESP32_WPA2enterprise.ino to connect to WPA2 Enterprise at work.
+
+
   WiFi.mode(WIFI_MODE_NULL);        // Reset the WiFi
   WiFi.setSleep(WIFI_PS_NONE);      // Turn off WiFi Powersaving
   WiFi.hostname(hostname);          // Set the hostname ("Departures Board")
   WiFi.mode(WIFI_STA);              // Enter WiFi station mode
+
+#if 1
+  // Manual connection to WPA2.
+  char ssid[] = WIFI_SSID;
+  char pass[] = WIDI_PASS;
+  WiFi.begin(ssid, pass);
+
+#endif
+
+#if 0
+  // Manual connection to WPA2 Enterprise with domain name.
+  const char ssid[] = EAP_SSID;
+  const char domain[] = EAP_DOMAIN;
+  const char user[] = EAP_USER;
+  const char pass[] = EAP_PASS;
+
+  WiFi.disconnect(true);
+
+  int err = 0;
+  err |= esp_eap_client_use_default_cert_bundle(true);
+  err |= esp_eap_client_set_domain_name(domain);
+  err |= esp_eap_client_set_identity((uint8_t*)user, strlen(user));
+  err |= esp_eap_client_set_username((uint8_t*)user, strlen(user));
+  err |= esp_eap_client_set_password((uint8_t*)pass, strlen(pass));
+  err |= esp_wifi_sta_enterprise_enable();
+
+  if ( err != 0 )
+  {
+    progressBar(F("Could not configure EAP :("), 20);
+  }
+
+  WiFi.begin(ssid);
+  progressBar(F("Connecting to EAP with domain..."),21);
+#endif
+
+#if 0
+  // Manual connection to WPA2 Enterprise without domain name.
+  const char ssid[] = EAP_SSID;
+  const char user[] = EAP_USER_DOMAIN;
+  const char pass[] = EAP_PASS;
+
+  WiFi.disconnect(true);
+
+  int err = 0;
+  err |= esp_eap_client_use_default_cert_bundle(true);
+  err |= esp_eap_client_set_identity((uint8_t*)user, strlen(user));
+  err |= esp_eap_client_set_username((uint8_t*)user, strlen(user));
+  err |= esp_eap_client_set_password((uint8_t*)pass, strlen(pass));
+  err |= esp_wifi_sta_enterprise_enable();
+  WiFi.begin(ssid);
+
+  if ( err != 0 )
+  {
+    progressBar(F("Could not configure EAP :("), 20);
+  }
+
+  progressBar(F("Connecting to EAP..."),21);
+#endif
+
+#if 0
+  // WiFiManager captive portal.
   WiFiManager wm;                   // Start WiFiManager
   wm.setAPCallback(wmConfigModeCallback);     // Set the callback for config mode notification
   wm.setWiFiAutoReconnect(true);              // Attempt to auto-reconnect WiFi
@@ -2685,6 +2754,7 @@ void setup(void) {
       // Failed to connect/configure
       ESP.restart();
   }
+#endif
 
   // Wait for WiFi connection
   while (WiFi.status() != WL_CONNECTED) {
