@@ -2683,11 +2683,35 @@ void setup(void) {
   WiFi.hostname(hostname);          // Set the hostname ("Departures Board")
   WiFi.mode(WIFI_STA);              // Enter WiFi station mode
 
+#if 0
+   // Manual connection to WPA2.
+   char ssid[] = WIFI_SSID;
+   char pass[] = WIFI_PASS;
+   WiFi.begin(ssid, pass);
+#endif 
+
 #if 1
-  // Manual connection to WPA2.
-  char ssid[] = WIFI_SSID;
-  char pass[] = WIDI_PASS;
-  WiFi.begin(ssid, pass);
+   // Manual connection to WPA2-Enterprise
+   char ssid[] = EAP_SSID;
+   char pass[] = EAP_PASS;
+   char user[] = EAP_USER_DOMAIN;
+   esp_eap_client_use_default_cert_bundle(true);
+   WiFi.begin(ssid, WPA2_AUTH_PEAP, user, user, pass, NULL, NULL, NULL, (int)ESP_EAP_TTLS_PHASE2_MSCHAPV2 );
+
+  progressBar(F("Conneting to EAP..."),21);
+
+#endif
+
+#if 0
+   // Manual connection to WPA2-Enterprise (with domain)
+   char ssid[] = EAP_SSID;
+   char pass[] = EAP_PASS;
+   char user[] = EAP_USER;
+   esp_eap_client_use_default_cert_bundle(true);
+   esp_eap_client_set_domain_name(EAP_DOMAIN);
+   WiFi.begin(ssid, WPA2_AUTH_PEAP, user, user, pass, NULL, NULL, NULL, (int)ESP_EAP_TTLS_PHASE2_MSCHAPV2 );
+
+  progressBar(F("Conneting to EAP..."),21);
 
 #endif
 
@@ -2758,7 +2782,28 @@ void setup(void) {
 
   // Wait for WiFi connection
   while (WiFi.status() != WL_CONNECTED) {
-    delay(250);
+    switch (WiFi.status())
+    {
+      case WL_NO_SSID_AVAIL:
+        progressBar(F("SSID not found!"), 22);
+        break;
+      case WL_SCAN_COMPLETED:
+        progressBar(F("Scan completed."), 22);
+        break;
+      case WL_CONNECT_FAILED:
+        progressBar(F("Connection failed."), 22);
+        break;
+      case WL_CONNECTION_LOST:
+        progressBar(F("Connection lost."), 22);
+        break;
+      case WL_DISCONNECTED:
+        progressBar(F("Connecting..."), 22);
+        break;
+      case WL_IDLE_STATUS:
+        progressBar(F("Wi-Fi idle."), 22);
+        break;
+    }
+    delay(100);
   }
 
   // Get our IP address and store
