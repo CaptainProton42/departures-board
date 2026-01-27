@@ -20,7 +20,7 @@
 
 // Release version number
 #define VERSION_MAJOR 2
-#define VERSION_MINOR 0
+#define VERSION_MINOR 1
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -65,6 +65,9 @@ static const char contentTypeHtml[] PROGMEM = "text/html";
 static const char ntpServer[] PROGMEM = "europe.pool.ntp.org";
 static struct tm timeinfo;
 static const char ukTimezone[] = "GMT0BST,M3.5.0/1,M10.5.0";
+
+// Default hostname
+static const char defaultHostname[] = "DeparturesBoard";
 
 // Local firmware updates via /update Web GUI
 static const char updatePage[] PROGMEM =
@@ -141,8 +144,8 @@ U8G2_SSD1322_NHD_256X64_F_4W_HW_SPI u8g2(U8G2_R0, /* cs=*/ 26, /* dc=*/ 5, /* re
 //
 // Custom fonts - replicas of those used on the real display boards
 //
-static const uint8_t NatRailSmall9[985] U8G2_FONT_SECTION("NatRailSmall9") =
-  "b\0\3\2\3\4\2\5\5\7\11\0\0\11\0\11\2\1\71\2r\3\300 \5\0\63\5!\7\71\245"
+static const uint8_t NatRailSmall9[997] U8G2_FONT_SECTION("NatRailSmall9") =
+  "c\0\3\2\3\4\2\5\5\7\11\0\0\11\0\11\2\1\71\2r\3\314 \5\0\63\5!\7\71\245"
   "\304\240\4\42\7\33-Eb\11#\16=\245M)I\6\245\62(\245$\1$\14=\245U\266\324\266"
   "$\331\42\0%\14<eE\244H\221\24)R\0&\15=\245\215T\222\222DJ\242H\11'\6\31"
   "\255\304\0(\10;%UR\252\25)\11;%EV\252\224\0*\12-\247ERY,K\3+\12"
@@ -172,7 +175,8 @@ static const uint8_t NatRailSmall9[985] U8G2_FONT_SECTION("NatRailSmall9") =
   "\21\0w\13-\245E\246$J\242t\1x\12-\245E\226\324*\265\0y\13=\241E\346\226\14\341"
   "\240\0z\11-\245\305\240\265\15\2{\17G#\206\266,=E\26\65\311\222d\11|\6\71\245\304!"
   "}\6\15\253\305 ~\15>\345\315\220\204\306\341!\211\22\0\15=\245E\222U\212Q\22%J\1"
-  "\200\11$k\215\22I\211\2\201\14\265%^\62hQ\66(\31\0\0\0\0";
+  "\200\11$k\215\22I\211\2\201\14\265%^\62hQ\66(\31\0\202\14=\345\305iI\64eH\206"
+  "A\0\0\0";
 
 static uint8_t NatRailTall12[1064] U8G2_FONT_SECTION("NatRailTall12") =
   "a\0\3\2\4\4\2\5\5\11\14\0\375\11\375\11\0\1Q\2\235\4\17 \5\0\346\12!\7\221B"
@@ -289,6 +293,8 @@ github ghUpdate("");
 unsigned long timer = 0;
 bool isSleeping = false;            // Is the screen sleeping (showing the "screensaver")
 bool sleepEnabled = false;          // Is overnight sleep enabled?
+bool forcedSleep = false;           // Is the system in manual sleep mode?
+bool sleepClock = true;             // Showing the clock in sleep mode?
 bool dateEnabled = false;           // Showing the date on screen?
 bool weatherEnabled = false;        // Showing weather at station location. Requires an OpenWeatherMap API key.
 bool enableBus = false;             // Include Bus services on the board?
@@ -314,8 +320,9 @@ byte altEnds = 23;                  // Hour at which to switch back to the defau
 bool noScrolling = false;           // Suppress all horizontal scrolling
 bool flipScreen = false;            // Rotate screen 180deg
 String timezone = "";               // custom (non UK) timezone for the clock
+bool apiKeys = false;               // Does apikeys.json exist?
 
-char hostname[20] = "DeparturesBoard"; // Default network hostname (WiFi and mDNS - can be manually overridden in config.json)
+char hostname[33];                  // Network hostname (mDNS)
 char myUrl[24];                     // Stores the board's own url
 
 // WiFi Manager status
@@ -328,19 +335,22 @@ float stationLat=0;                 // Selected station Latitude/Longitude (used
 float stationLon=0;
 char callingCrsCode[4] = "";        // Station code to filter routes on
 char callingStation[45] = "";       // Calling filter station friendly name
+char platformFilter[MAXPLATFORMFILTERSIZE]; // CSV list of platforms to filter on
+char cleanPlatformFilter[MAXPLATFORMFILTERSIZE]; // Cleaned up platform filter (for performance)
 char altCrsCode[4] = "";            // Station code of alternate station
 float altLat=0;                     // Alternate station Latitude/Longitude (used to get weather for the location)
 float altLon=0;
 char altCallingCrsCode[4];          // Station code to filter routes on (when alternate station active)
 char altCallingStation[45] = "";    // Calling filter station friendly name (when alternate station active)
+char altPlatformFilter[MAXPLATFORMFILTERSIZE]; // CSV list of platforms to filter on
 String tflAppkey = "";              // TfL API Key
 char tubeId[13] = "";               // Underground station naptan id
 String tubeName="";                 // Underground Station Name
 char busAtco[13]="";                // Bus Stop ATCO location
 String busName="";                  // Bus Stop long name
 int busDestX;                       // Variable margin for bus destination
-char busFilter[25]="";              // CSV list of services to filter on
-char cleanBusFilter[25];            // Cleaned up bus filter (for performance)
+char busFilter[MAXBUSFILTERSIZE]=""; // CSV list of services to filter on
+char cleanBusFilter[MAXBUSFILTERSIZE]; // Cleaned up bus filter (for performance)
 float busLat=0;                     // Bus stop Latitude/Longitude (used to get weather for the location)
 float busLon=0;
 
@@ -517,7 +527,7 @@ void drawStartupHeading() {
   drawBuildTime();
 }
 
-void drawStationHeader(const char *stopName, const char *callingStopName) {
+void drawStationHeader(const char *stopName, const char *callingStopName, const char *platFilter) {
 
   // Clear the top line
   if (boardMode == MODE_TUBE || boardMode == MODE_BUS) {
@@ -528,7 +538,9 @@ void drawStationHeader(const char *stopName, const char *callingStopName) {
 
   u8g2.setFont(NatRailSmall9);
   char boardTitle[95];
-  if (callingStopName[0]) snprintf(boardTitle,sizeof(boardTitle),"%s  (%c%s)",stopName,129,callingStopName);
+  if (callingStopName[0] && platFilter[0]) snprintf(boardTitle,sizeof(boardTitle),"%s %c%s  (%c%s)",stopName,130,platFilter,129,callingStopName);
+  else if (callingStopName[0] && !platFilter[0]) snprintf(boardTitle,sizeof(boardTitle),"%s  (%c%s)",stopName,129,callingStopName);
+  else if (!callingStopName[0] && platFilter[0]) snprintf(boardTitle,sizeof(boardTitle),"%s %c%s",stopName,130,platFilter);
   else strncpy(boardTitle,stopName,sizeof(boardTitle));
   int boardTitleWidth = getStringWidth(boardTitle);
   int line4Y = (boardMode == MODE_RAIL) ? LINE4 : ULINE4;
@@ -576,7 +588,7 @@ void drawCurrentTime(bool update) {
     strcpy(displayedTime,sysTime);
     if (dateEnabled && timeinfo.tm_mday!=dateDay) {
       // Need to update the date on screen
-      drawStationHeader(station.location,callingStation);
+      drawStationHeader(station.location,callingStation,platformFilter);
       if (update) u8g2.sendBuffer();  // Just refresh on new date
     }
   }
@@ -589,19 +601,20 @@ void drawSleepingScreen() {
 
   u8g2.setContrast(DIMMED_BRIGHTNESS);
   u8g2.clearBuffer();
-  getLocalTime(&timeinfo);
-  sprintf(sysTime,"%02d:%02d",timeinfo.tm_hour,timeinfo.tm_min);
-  strftime(sysDate,29,"%d %B %Y",&timeinfo);
+  if (sleepClock) {
+    getLocalTime(&timeinfo);
+    sprintf(sysTime,"%02d:%02d",timeinfo.tm_hour,timeinfo.tm_min);
+    strftime(sysDate,29,"%d %B %Y",&timeinfo);
 
-  int offset = (getStringWidth(sysDate)-getStringWidth(sysTime))/2;
-  u8g2.setFont(NatRailTall12);
-  int y = random(39);
-  int x = random(SCREEN_WIDTH-getStringWidth(sysDate));
-  u8g2.drawStr(x+offset,y,sysTime);
-  u8g2.setFont(NatRailSmall9);
-  u8g2.drawStr(x,y+13,sysDate);
+    int offset = (getStringWidth(sysDate)-getStringWidth(sysTime))/2;
+    u8g2.setFont(NatRailTall12);
+    int y = random(39);
+    int x = random(SCREEN_WIDTH-getStringWidth(sysDate));
+    u8g2.drawStr(x+offset,y,sysTime);
+    u8g2.setFont(NatRailSmall9);
+    u8g2.drawStr(x,y+13,sysDate);
+  }
   u8g2.sendBuffer();
-  firstLoad=true;
 }
 
 void showUpdateIcon(bool show) {
@@ -836,6 +849,7 @@ void doClockCheck() {
 
 // Returns true if sleep mode is enabled and we're within the sleep period
 bool isSnoozing() {
+  if (forcedSleep) return true;
   if (!sleepEnabled) return false;
   getLocalTime(&timeinfo);
   byte myHour = timeinfo.tm_hour;
@@ -899,6 +913,7 @@ void loadApiKeys() {
         if (settings[F("appKey")].is<const char*>()) {
           tflAppkey = settings[F("appKey")].as<String>();
         }
+        apiKeys = true;
 
       } else {
         // JSON deserialization failed - TODO
@@ -920,6 +935,10 @@ void writeDefaultConfig() {
 void loadConfig() {
   JsonDocument doc;
 
+  // Set defaults
+  strcpy(hostname,defaultHostname);
+  timezone = String(ukTimezone);
+
   if (LittleFS.exists(F("/config.json"))) {
     File file = LittleFS.open(F("/config.json"), "r");
     if (file) {
@@ -930,6 +949,7 @@ void loadConfig() {
         if (settings[F("crs")].is<const char*>())        strlcpy(crsCode, settings[F("crs")], sizeof(crsCode));
         if (settings[F("callingCrs")].is<const char*>()) strlcpy(callingCrsCode, settings[F("callingCrs")], sizeof(callingCrsCode));
         if (settings[F("callingStation")].is<const char*>()) strlcpy(callingStation, settings[F("callingStation")], sizeof(callingStation));
+        if (settings[F("platformFilter")].is<const char*>())  strlcpy(platformFilter, settings[F("platformFilter")], sizeof(platformFilter));
         if (settings[F("hostname")].is<const char*>())   strlcpy(hostname, settings[F("hostname")], sizeof(hostname));
         if (settings[F("wsdlHost")].is<const char*>())   strlcpy(wsdlHost, settings[F("wsdlHost")], sizeof(wsdlHost));
         if (settings[F("wsdlAPI")].is<const char*>())    strlcpy(wsdlAPI, settings[F("wsdlAPI")], sizeof(wsdlAPI));
@@ -964,6 +984,7 @@ void loadConfig() {
         if (settings[F("altLon")].is<float>())           altLon = settings[F("altLon")];
         if (settings[F("altCallingCrs")].is<const char*>()) strlcpy(altCallingCrsCode, settings[F("altCallingCrs")], sizeof(altCallingCrsCode));
         if (settings[F("altCallingStation")].is<const char*>()) strlcpy(altCallingStation, settings[F("altCallingStation")], sizeof(altCallingStation));
+        if (settings[F("altPlatformFilter")].is<const char*>())  strlcpy(altPlatformFilter, settings[F("altPlatformFilter")], sizeof(altPlatformFilter));
 
         if (settings[F("busId")].is<const char*>())      strlcpy(busAtco, settings[F("busId")], sizeof(busAtco));
         if (settings[F("busName")].is<const char*>())    busName = String(settings[F("busName")]);
@@ -991,6 +1012,7 @@ bool setAlternateStation() {
     stationLon = altLon;
     strcpy(callingCrsCode, altCallingCrsCode);
     strcpy(callingStation, altCallingStation);
+    strcpy(platformFilter, altPlatformFilter);
     return true;
   } else {
     return false;
@@ -1019,6 +1041,7 @@ void softResetBoard() {
   nextWeatherUpdate = 0;
   isScrollingService = false;
   isScrollingStops = false;
+  isScrollingPrimary = false;
   isSleeping=false;
   firstLoad=true;
   noDataLoaded=true;
@@ -1083,6 +1106,8 @@ void softResetBoard() {
   switch (boardMode) {
     case MODE_RAIL:
       altStationActive = setAlternateStation();
+      // Create a cleaned platform filter (if any)
+      raildata->cleanFilter(platformFilter,cleanPlatformFilter,sizeof(platformFilter));
       break;
 
     case MODE_TUBE:
@@ -1199,7 +1224,7 @@ bool checkForFirmwareUpdate() {
 // Request a data update via the raildataClient
 bool getStationBoard() {
   if (!firstLoad) showUpdateIcon(true);
-  lastUpdateResult = raildata->updateDepartures(&station,&messages,crsCode,nrToken,MAXBOARDSERVICES,enableBus,callingCrsCode);
+  lastUpdateResult = raildata->updateDepartures(&station,&messages,crsCode,nrToken,MAXBOARDSERVICES,enableBus,callingCrsCode,cleanPlatformFilter);
   nextDataUpdate = millis()+apiRefreshRate;
   if (lastUpdateResult == UPD_SUCCESS || lastUpdateResult == UPD_NO_CHANGE) {
     showUpdateIcon(false);
@@ -1336,7 +1361,7 @@ void drawStationBoard() {
     // Clear the top two lines
     blankArea(0,LINE0,256,LINE2-1);
   }
-  drawStationHeader(station.location,callingStation);
+  drawStationHeader(station.location,callingStation,platformFilter);
 
   // Draw the primary service line
   isShowingVia=false;
@@ -1464,8 +1489,8 @@ void drawCurrentTimeUG(bool update) {
     u8g2.setFont(Underground10);
 
     if (dateEnabled && timeinfo.tm_mday!=dateDay) {
-      if (boardMode == MODE_TUBE) drawStationHeader(tubeName.c_str(),"");
-      else drawStationHeader(busName.c_str(),"");
+      if (boardMode == MODE_TUBE) drawStationHeader(tubeName.c_str(),"","");
+      else drawStationHeader(busName.c_str(),"",busFilter);
       if (update) u8g2.sendBuffer();  // Just refresh on new date
       u8g2.setFont(Underground10);
     }
@@ -1548,7 +1573,7 @@ void drawUndergroundBoard() {
       // Clear the top three lines
       blankArea(0,ULINE0,256,ULINE3-1);
   }
-  drawStationHeader(tubeName.c_str(),"");
+  drawStationHeader(tubeName.c_str(),"","");
 
   if (station.boardChanged) {
     // prepare to scroll up primary services
@@ -1663,7 +1688,7 @@ void drawBusDeparturesBoard() {
       // Clear the top three lines
       blankArea(0,ULINE0,256,ULINE3-1);
   }
-  drawStationHeader(busName.c_str(),"");
+  drawStationHeader(busName.c_str(),"",busFilter);
 
   if (station.boardChanged) {
     // prepare to scroll up primary services
@@ -1792,10 +1817,10 @@ void handleStreamFlashFile(String filename, const uint8_t *filedata, size_t cont
 // to check the National Rail or TfL tokens at this point.
 //
 void handleSaveKeys() {
-  String newJSON, owmToken;
+  String newJSON, owmToken, nrToken;
   JsonDocument doc;
   bool result = true;
-  String msg = F("API keys saved successfully!");
+  String msg = F("API keys saved successfully.");
 
   if ((server.method() == HTTP_POST) && (server.hasArg("plain"))) {
     newJSON = server.arg("plain");
@@ -1808,7 +1833,7 @@ void handleSaveKeys() {
         if (owmToken.length()) {
           // Check if this is a valid token...
           if (!currentWeather.updateWeather(owmToken, "51.52", "-0.13")) {
-            msg = F("OpenWeather Map API key is not valid. No changes have been saved.");
+            msg = F("The OpenWeather Map API key is not valid. Please check you have copied your key correctly. It may take up to 30 minutes for a newly created key to become active.\n\nNo changes have been saved.");
             result = false;
           }
         }
@@ -1817,6 +1842,9 @@ void handleSaveKeys() {
         if (!saveFile(F("/apikeys.json"),newJSON)) {
           msg = F("Failed to save the API keys to the file system (file system corrupt or full?)");
           result = false;
+        } else {
+          nrToken = settings[F("nrToken")].as<String>();
+          if (!nrToken.length()) msg+=F("\n\nNote: Only Tube and Bus Departures will be available without a National Rail token.");
         }
       }
     } else {
@@ -1824,14 +1852,16 @@ void handleSaveKeys() {
       result = false;
     }
     if (result) {
-      sendResponse(200,msg);
       // Load/Update the API Keys in memory
       loadApiKeys();
-      // If both the station codes are blank, we're in the setup process. If not, the keys have been changed so just reboot.
-      if (!crsCode[0] && !tubeId[0]) {
+      // If all location codes are blank we're in the setup process. If not, the keys have been changed so just reboot.
+      if (!crsCode[0] && !tubeId[0] && !busAtco[0]) {
+        sendResponse(200,msg);
         writeDefaultConfig();
         showSetupCrsHelpScreen();
       } else {
+        msg += F("\n\nThe system will now restart.");
+        sendResponse(200,msg);
         delay(500);
         ESP.restart();
       }
@@ -2061,7 +2091,7 @@ void handleInfo() {
 
 // Stream the index.htm page unless we're in first time setup and need the api keys
 void handleRoot() {
-  if (!nrToken[0] && tflAppkey=="") {
+  if (!apiKeys) {
     if (LittleFS.exists(F("/keys.htm"))) handleStreamFile(F("/keys.htm")); else handleStreamFlashFile(F("/keys.htm"),keyshtm,sizeof(keyshtm));
   } else {
     if (LittleFS.exists(F("/index_d.htm"))) handleStreamFile(F("/index_d.htm")); else handleStreamFlashFile(F("/index.htm"),indexhtm,sizeof(indexhtm));
@@ -2137,6 +2167,22 @@ void handleOtaUpdate() {
   }
   // Always restart
   ESP.restart();
+}
+
+// Endpoint for controlling sleep mode
+void handleControl() {
+  String resp = "{\"sleeping\":";
+  if (server.hasArg(F("sleep"))) {
+    if (server.arg(F("sleep")) == "1") forcedSleep=true; else forcedSleep=false;
+  }
+  if (server.hasArg(F("clock"))) {
+    if (server.arg(F("clock")) == "1") sleepClock=true; else sleepClock=false;
+  }
+  resp += (isSleeping || forcedSleep) ? "true":"false";
+  resp += F(",\"display\":");
+  resp += (sleepClock || (!isSleeping && !forcedSleep)) ? "true":"false";
+  resp += "}";
+  server.send(200, contentTypeJson, resp);
 }
 
 /*
@@ -2724,6 +2770,7 @@ void setup(void) {
   server.on(F("/savekeys"),HTTP_POST,handleSaveKeys);           // Used by the Web GUI to verify/save API keys
   server.on(F("/brightness"),handleBrightness);                 // Used by the Web GUI to interactively set the panel brightness
   server.on(F("/ota"),handleOtaUpdate);                         // Used by the Web GUI to initiate a manual firmware/WebApp update
+  server.on(F("/control"),handleControl);                       // Endpoint for automation
 
   server.on(F("/update"), HTTP_GET, []() {
     server.sendHeader("Connection", "close");
@@ -2765,7 +2812,7 @@ void setup(void) {
 
   server.begin();     // Start the local web server
 
-  // Check for Firmware/GUI updates?
+  // Check for Firmware updates?
   if (firmwareUpdates) {
     progressBar(F("Checking for firmware updates"),40);
     if (ghUpdate.getLatestRelease()) {
@@ -2780,10 +2827,11 @@ void setup(void) {
       u8g2.sendBuffer();
     }
   }
+  checkPostWebUpgrade();
 
   // First time configuration?
-  if ((!crsCode[0] && !tubeId[0]) || (!nrToken[0] && tflAppkey=="")) {
-    if (!nrToken[0] && tflAppkey=="") showSetupKeysHelpScreen();
+  if ((!crsCode[0] && !tubeId[0] && !busAtco[0]) || (!nrToken[0] && boardMode==MODE_RAIL)) {
+    if (!apiKeys) showSetupKeysHelpScreen();
     else showSetupCrsHelpScreen();
     // First time setup mode will exit with a reboot, so just loop here forever servicing web requests
     while (true) {
@@ -2792,11 +2840,9 @@ void setup(void) {
     }
   }
 
-  checkPostWebUpgrade();
-
-  configTime(0,0, ntpServer);                 // Configure NTP server for setting the clock
-  setenv("TZ",ukTimezone,1);  // Configure UK TimeZone (default and fallback if custom is invalid)
-  tzset();                                    // Set the TimeZone
+  configTime(0,0, ntpServer);   // Configure NTP server for setting the clock
+  setenv("TZ",ukTimezone,1);    // Configure UK TimeZone (default and fallback if custom is invalid)
+  tzset();                      // Set the TimeZone
   if (timezone!="") {
     setenv("TZ",timezone.c_str(),1);
     tzset();
@@ -2835,6 +2881,7 @@ void setup(void) {
         while (true) { server.handleClient(); yield();}
       }
       progressBar(F("Initialising National Rail interface"),70);
+      raildata->cleanFilter(platformFilter,cleanPlatformFilter,sizeof(platformFilter));
   } else if (boardMode == MODE_TUBE) {
       progressBar(F("Initialising TfL interface"),70);
       tfldata = new TfLdataClient();
@@ -2851,11 +2898,21 @@ void setup(void) {
 
 void loop(void) {
 
+  bool wasSleeping = isSleeping;
   isSleeping = isSnoozing();
 
   if (isSleeping && millis()>timer) {       // If the "screensaver" is active, change the screen every 8 seconds
     drawSleepingScreen();
     timer=millis()+8000;
+  } else if (wasSleeping && !isSleeping) {
+    // Exit sleep mode cleanly
+    firstLoad=true;
+    nextDataUpdate=0;
+    isScrollingStops=false;
+    isScrollingService=false;
+    isScrollingPrimary=false;
+    prevProgressBarPosition=70;
+    u8g2.clearDisplay();
   }
 
   // WiFi Status icon

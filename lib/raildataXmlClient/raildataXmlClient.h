@@ -18,6 +18,7 @@ typedef void (*rdCallback) (int state, int id);
 
 #define MAXHOSTSIZE 48
 #define MAXAPIURLSIZE 48
+#define MAXPLATFORMFILTERSIZE 25
 
 
 class raildataXmlClient: public xmlListener {
@@ -70,8 +71,8 @@ class raildataXmlClient: public xmlListener {
         bool firstDataLoad;
         bool endXml;
 
-        char filterCrs[4];
-        bool filter = false;
+        char platformFilter[MAXPLATFORMFILTERSIZE];
+        bool filterPlatforms = false;
         bool keepRoute = false;
 
         rdCallback Xcb;
@@ -82,6 +83,9 @@ class raildataXmlClient: public xmlListener {
         void fixFullStop(char* input);
         void sanitiseData();
         void deleteService(int x);
+        void trim(char* &start, char* &end);
+        bool equalsIgnoreCase(const char* a, int a_len, const char* b);
+        bool serviceMatchesFilter(const char* filter, const char* serviceId);
 
         virtual void startTag(const char *tagName);
         virtual void endTag(const char *tagName);
@@ -92,6 +96,7 @@ class raildataXmlClient: public xmlListener {
     public:
         raildataXmlClient();
         int init(const char *wsdlHost, const char *wsdlAPI, rdCallback RDcb);
-        int updateDepartures(rdStation *station, stnMessages *messages, const char *crsCode, const char *customToken, int numRows, bool includeBusServices, const char *callingCrsCode);
+        void cleanFilter(const char* rawFilter, char* cleanedFilter, size_t maxLen);
+        int updateDepartures(rdStation *station, stnMessages *messages, const char *crsCode, const char *customToken, int numRows, bool includeBusServices, const char *callingCrsCode, const char *platforms);
         String getLastError();
 };

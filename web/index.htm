@@ -55,6 +55,10 @@
           <input id="searchName" type="text" placeholder="Type the station name" class="form-control input-md typeahead">
         </div>
 
+        <div class="form-group" id="nrInvalidToken" style="display:none">
+          <span class="help-block" style="text-align: center; background-color: black; border-color: red; border-style: solid; border-width: 3px; color: white; padding: 8px;">You must enter a valid National Rail API token to use Rail Departures mode. Manage your API keys <a href="/keys.htm">here</a>.</span>
+        </div>
+
         <div class="form-group" id="tflSearchBox" style="display:none">
           <label class="control-label" for="searchNameTfL">Underground Station</label>
           <input id="searchNameTfL" type="text" placeholder="Type the underground station name" class="form-control input-md typeahead">
@@ -104,6 +108,10 @@
               <button id="clearFilter" name="clearFilter" class="btn" type="button">Clear</button>
             </div>
           </div>
+          <div id="platformFilterBox" style="margin-top:10px;">
+            <label class="control-label" for="platformFilter">Only show these platforms</label>
+            <input id="platformFilter" type="text" maxlength="24" placeholder="Enter comma separated platform numbers or blank for all" class="form-control input-md">
+          </div>
         </div>
 
         <div class="form-group" id="nrAltStation" style="display:none">
@@ -126,6 +134,10 @@
               <div style="flex-shrink: 0;">
                 <button id="altClearFilter" name="altClearFilter" class="btn" type="button">Clear</button>
               </div>
+            </div>
+            <div id="altPlatformFilterBox" style="margin-top:10px;">
+              <label class="control-label" for="altPlatformFilter">Only show these platforms (alternate active)</label>
+              <input id="altPlatformFilter" type="text" maxlength="24" placeholder="Enter comma separated platform numbers or blank for all" class="form-control input-md">
             </div>
           </div>
 
@@ -157,7 +169,7 @@
             <label><input type="checkbox" id="showDate"> Show the date on screen</label>
           </div>
           <div id="optBuses" class="checkbox" style="display:none">
-            <label><input type="checkbox" id="enableBuses"> Include Bus services (National Rail)</label>
+            <label><input type="checkbox" id="enableBuses"> Include bus replacement services</label>
           </div>
           <div id="optWeather" class="checkbox" style="display:none">
             <label><input type="checkbox" id="enableWeather"> Include current weather at location</label>
@@ -170,6 +182,13 @@
           </div>
           <div class="checkbox">
             <label><input type="checkbox" id="optFlip"> Flip the display 180&deg;</label>
+          </div>
+          <div class="checkbox">
+            <label><input type="checkbox" id="optHost"> Set custom hostname for this board</label>
+          </div>
+          <div id="customHostbox" style="display:none;">
+            <input id="customHost" type="text" maxlength="32" placeholder="Enter the hostname or leave blank for the default" class="form-control input-md">
+            <span class="help-block">Enter the new hostname for this board (letters, numbers, hyphens only).</span>
           </div>
           <div class="checkbox">
             <label><input type="checkbox" id="optTZ"> Custom (non-UK) time zone (only for clock display)</label>
@@ -234,6 +253,8 @@
       stationCRS: "",
       stationLatitude: 0,
       stationLongitude: 0,
+      platformFilter: "",
+      platformFilterOK: true,
       tubeName: "",
       tubeId: "",
       busName: "",
@@ -260,8 +281,12 @@
       altCallingStationSelected: false,
       altCallingStation: "",
       altCallingCrs: "",
+      altPlatformFilter: "",
+      altPlatformFilterOK: true,
       tzOK: true,
+      hostnameOK: true,
       needRestart: false,
+      validNatRailToken: true,
       firmwareVersion: "",
       jsonSettings: {},
       atcoHistory: []
@@ -272,6 +297,7 @@
       searchName: document.getElementById("searchName"),
       searchNameTfL: document.getElementById("searchNameTfL"),
       callingStation: document.getElementById("callingStation"),
+      platformFilter: document.getElementById("platformFilter"),
       altCallingStation: document.getElementById("altCallingStation"),
       brightness: document.getElementById("brightness"),
       enableSleep: document.getElementById("enableSleep"),
@@ -285,6 +311,7 @@
       altClearButton: document.getElementById("altClearFilter"),
       altStart: document.getElementById("altStart"),
       altEnd: document.getElementById("altEnd"),
+      altPlatformFilter: document.getElementById("altPlatformFilter"),
       verifyAtcoButton: document.getElementById("verifyAtco"),
       busAtco: document.getElementById("busAtco"),
       busLongName: document.getElementById("busAtcoLongName"),
@@ -293,11 +320,15 @@
       busAtcoHistoryList: document.getElementById("busAtcoHistoryList"),
       optFlip: document.getElementById("optFlip"),
       optTZ: document.getElementById("optTZ"),
-      customTZ: document.getElementById("customTZ")
+      customTZ: document.getElementById("customTZ"),
+      optHost: document.getElementById("optHost"),
+      customHost: document.getElementById("customHost")
     };
 
     const busFilterError = "Please enter a valid list of bus services to filter on, or leave blank for all services.";
+    const platformFilterError = "Please enter a valid list of platforms to filter on, or leave blank for all services.";
     const tzError = "Please enter a valid POSIX format timezone string or uncheck the \"Custom timezone\" option to use UK time.";
+    const hostnameError = "Please enter a valid hostname or uncheck the \"Custom hostname\" option to use the default \"DeparturesBoard\".";
     const MAX_BUS_ATCOS = 10;
 
     function populateHoursSelect(selectId) {
@@ -418,28 +449,65 @@
         renderAtcoHistory();
     }
 
-    function validateBusFilter() {
-      const input = document.getElementById("busFilter").value.trim();
-      appState.busFilterOK = true;
+    function validateCSVFilter(input,errorMessage) {
+      const trimmed = input.trim();
 
-      if (!input.length) {
-        appState.busFilter = "";
-        return;
+      if (!trimmed.length) {
+        return {
+          ok: true,
+          value: ""
+        };
       }
 
-      if (input.includes('"')) {
-        alert('Double quotes (") are not allowed in the bus service list.');
-        appState.busFilterOK = false;
-        return;
+      if (trimmed.includes('"')) {
+        alert('Double quotes (") are not allowed in the platform/bus service filters.');
+        return {
+          ok: false
+        };
       }
 
       const csvRegex = /^[^,\s]+(\s*,\s*[^,\s]+)*$/;
-      if (!csvRegex.test(input)) {
-        alert(busFilterError);
-        appState.busFilterOK = false;
-        return;
+      if (!csvRegex.test(trimmed)) {
+        alert(errorMessage);
+        return {
+          ok: false
+        };
       }
-      appState.busFilter = input;
+
+      return {
+        ok: true,
+        value: trimmed
+      };
+    }
+
+    function validatePlatformFilter() {
+      const input = elements.platformFilter.value;
+      const result = validateCSVFilter(input,platformFilterError);
+      if (!result.ok) appState.platformFilterOK = false;
+      else {
+        appState.platformFilterOK = true;
+        appState.platformFilter = result.value;
+      }
+    }
+
+    function validateAltPlatformFilter() {
+      const input = elements.altPlatformFilter.value;
+      const result = validateCSVFilter(input,platformFilterError);
+      if (!result.ok) appState.altPlatformFilterOK = false;
+      else {
+        appState.altPlatformFilterOK = true;
+        appState.altPlatformFilter = result.value;
+      }
+    }
+
+    function validateBusFilter() {
+      const input = elements.busFilter.value;
+      const result = validateCSVFilter(input,busFilterError);
+      if (!result.ok) appState.busFilterOK = false;
+      else {
+        appState.busFilterOK = true;
+        appState.busFilter = result.value;
+      }
     }
 
     function validateTZ() {
@@ -450,6 +518,16 @@
         if (regex.test(value)) return;
         appState.tzOK = false;
         alert(tzError);
+    }
+
+    function validateHostname() {
+        const regex = /^(?!-)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
+        const value = elements.customHost.value.trim();
+        appState.hostnameOK = true;
+        if (!value.length) return;
+        if (regex.test(value)) return;
+        appState.hostnameOK = false;
+        alert(hostnameError);
     }
 
     const substringMatcher = () => {
@@ -554,11 +632,13 @@
       }
     });
 
-    // Prevent default submit and call handleSave only once
+    // Prevent default submit and call handleSave only once if filters OK
     elements.form.addEventListener("submit", function (e) {
       e.preventDefault();
       if (!appState.busFilterOK) alert(busFilterError);
+      else if (!appState.platformFilterOK || !appState.altPlatformFilterOK) alert(platformFilterError);
       else if (!appState.tzOK) alert(tzError);
+      else if (!appState.hostnameOK) alert(hostnameError);
       else handleSave();
     });
 
@@ -566,6 +646,7 @@
     elements.searchName.addEventListener("blur", () => setTimeout(handleStationLostFocus, 500));
     elements.callingStation.addEventListener("focus", () => elements.callingStation.select());
     elements.callingStation.addEventListener("blur", () => setTimeout(handleCallingStationLostFocus, 500));
+    elements.platformFilter.addEventListener("blur", validatePlatformFilter);
     elements.altCallingStation.addEventListener("focus", () => elements.altCallingStation.select());
     elements.altCallingStation.addEventListener("blur", () => setTimeout(handleAltCallingStationLostFocus, 500));
     elements.searchNameTfL.addEventListener("focus", () => elements.searchNameTfL.select());
@@ -577,12 +658,15 @@
     elements.altStation.addEventListener("focus", () => elements.altStation.select());
     elements.altStation.addEventListener("blur", () => setTimeout(handleAltStationLostFocus, 500));
     elements.clearAltButton.addEventListener("click", handleClearAltStation);
+    elements.altPlatformFilter.addEventListener("blur", validateAltPlatformFilter);
     elements.verifyAtcoButton.addEventListener("click", handleVerifyAtco);
     elements.clearHistoryButton.addEventListener("click", handleClearHistory);
     elements.busAtcoHistoryList.addEventListener('change', handleAtcoHistorySelect);
     elements.busFilter.addEventListener("blur", validateBusFilter);
-    elements.optTZ.addEventListener("change", () => show("customTZbox",isChecked("optTZ")));
+    elements.optTZ.addEventListener("change", () => {show("customTZbox",isChecked("optTZ")); if (!isChecked("optTZ")) {elements.customTZ.value = ""; appState.tzOK=true;}});
     elements.customTZ.addEventListener("blur",validateTZ);
+    elements.optHost.addEventListener("change", () => {show("customHostbox",isChecked("optHost")); if (!isChecked("optHost")) {elements.customHost.value = ""; appState.hostnameOK=true;}});
+    elements.customHost.addEventListener("blur",validateHostname);
 
     document.addEventListener("DOMContentLoaded", async () => {
       await fetchConfig();
@@ -630,6 +714,11 @@
           $('#enableWeather').prop('disabled', true).prop('checked', false);
         }
         appState.appKey = data.appKey || "";
+        if (!data.nrToken || data.nrToken.length!=36) {
+          appState.validNatRailToken = false;
+          if (appState.boardMode == 0) appState.boardMode = 1;
+          applyBoardMode();
+        }
       } catch (err) {
         console.warn("Could not load api keys.");
       }
@@ -705,7 +794,7 @@
     function applyBoardMode() {
         const mode = appState.boardMode;
 
-        const rail = (mode === 0);
+        const rail = (mode === 0 && appState.validNatRailToken);
         const tube = (mode === 1);
         const bus  = (mode === 2);
 
@@ -718,6 +807,7 @@
         show("optWeather", rail || bus);
         show("optFastRefresh", rail);
         show("optNoScroll", rail || tube);
+        show("nrInvalidToken", mode === 0 && !appState.validNatRailToken);
 
         show("tflT", tube);
         show("tflSearchBox", tube);
@@ -771,8 +861,10 @@
 
       appState.callingStation = s.callingStation || "";
       appState.callingCrs = s.callingCrs || "";
+      appState.platformFilter = s.platformFilter || "";
       appState.altCallingStation = s.altCallingStation || "";
       appState.altCallingCrs = s.altCallingCrs || "";
+      appState.altPlatformFilter = s.altPlatformFilter || "";
 
       appState.tubeName = s.tubeName || "";
       appState.tubeId = s.tubeId || "";
@@ -789,7 +881,9 @@
       applyBoardMode();
       elements.searchName.value = appState.stationName;
       elements.callingStation.value = appState.callingStation;
+      elements.platformFilter.value = appState.platformFilter;
       elements.altCallingStation.value = appState.altCallingStation;
+      elements.altPlatformFilter.value = appState.altPlatformFilter;
       show("nrAltCallingBox",appState.altCallingCrs.length);
       elements.searchNameTfL.value = appState.tubeName;
       elements.busAtco.value = appState.busId;
@@ -811,6 +905,10 @@
       elements.customTZ.value = s.TZ || "";
       setCheckbox("optTZ", elements.customTZ.value.length);
       show("customTZbox", elements.customTZ.value.length);
+
+      elements.customHost.value = s.hostname || "";
+      setCheckbox("optHost", elements.customHost.value.length);
+      show("customHostbox", elements.customHost.value.length);
 
       setCheckbox("enableSleep", s.sleep);
       setCheckbox("showDate", s.showDate);
@@ -866,7 +964,6 @@
       appState.altCrs = item.crsCode;
       appState.altLatitude = item.latitude;
       appState.altLongitude = item.longitude;
-      //toggleAltCallingBox();
       toggleAltSelectors();
     }
 
@@ -955,13 +1052,14 @@
 
     async function handleSave() {
       const s = appState.jsonSettings;
-      if (!isChecked("optTZ")) elements.customTZ.value = "";
+      if ((s.hostname || "") != elements.customHost.value.trim()) appState.needRestart = true;
       s.station = appState.stationName;
       s.crs = appState.stationCRS;
       s.lat = appState.stationLatitude;
       s.lon = appState.stationLongitude;
       s.callingStation = appState.callingStation;
       s.callingCrs = appState.callingCrs;
+      s.platformFilter = appState.platformFilter;
       s.tubeId = appState.tubeId;
       s.tubeName = appState.tubeName;
       s.mode = appState.boardMode;
@@ -984,6 +1082,7 @@
       s.altEnds = parseInt(elements.altEnd.value);
       s.altCallingStation = appState.altCallingStation;
       s.altCallingCrs = appState.altCallingCrs;
+      s.altPlatformFilter = appState.altPlatformFilter;
       if (appState.busIdOK) {
         s.busName = appState.busName;
         s.busId = appState.busId;
@@ -991,7 +1090,8 @@
         s.busLon = appState.busLon;
         s.busFilter = appState.busFilter;
       }
-      s.TZ = elements.customTZ.value
+      if (isChecked("optTZ") && elements.customTZ.value.trim().length) s.TZ = elements.customTZ.value.trim(); else delete s.TZ;
+      if (isChecked("optHost") && elements.customHost.value.trim().length) s.hostname = elements.customHost.value.trim(); else delete s.hostname;
       try {
         const response = await fetch(`/savesettings${appState.needRestart ? '?reboot=1' : ''}`, {
           method: 'POST',

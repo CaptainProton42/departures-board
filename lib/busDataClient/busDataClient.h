@@ -17,6 +17,7 @@ typedef void (*busClientCallback) ();
 
 #define MAXBUSLINESIZE 9
 #define BUSMAXREADSERVICES 20
+#define MAXBUSFILTERSIZE 25
 
 #define PBT_START 0
 #define PBT_HEADER 1
@@ -49,7 +50,6 @@ class busDataClient: public JsonListener {
         String longName;
         bool maxServicesRead = false;
         busStop xBusStop;
-        char processedFilter[25]; // store cleaned lowercase filter
 
         String stripTag(String html);
         void replaceWord(char* input, const char* target, const char* replacement);

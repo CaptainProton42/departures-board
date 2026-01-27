@@ -185,10 +185,78 @@ void raildataXmlClient::fixFullStop(char *input) {
     }
 }
 
+// Trim leading and trailing spaces in-place
+void raildataXmlClient::trim(char* &start, char* &end) {
+  while (start <= end && isspace(*start)) start++;
+  while (end >= start && isspace(*end)) end--;
+}
+
+// Compare strings case-insensitively
+bool raildataXmlClient::equalsIgnoreCase(const char* a, int a_len, const char* b) {
+  for (int i = 0; i < a_len; i++) {
+    if (tolower(a[i]) != tolower(b[i])) return false;
+  }
+  return b[a_len] == '\0';
+}
+
+// Check if the service is in the filter list (if there is one)
+bool raildataXmlClient::serviceMatchesFilter(const char* filter, const char* serviceId) {
+  if (filter == nullptr || filter[0] == '\0') return true; // empty filter = match all
+
+  const char* start = filter;
+  const char* ptr = filter;
+
+  while (true) {
+    if (*ptr == ',' || *ptr == '\0') {
+      const char* end = ptr - 1;
+      char* trimStart = const_cast<char*>(start);
+      char* trimEnd   = const_cast<char*>(end);
+      trim(trimStart, trimEnd);
+      int len = trimEnd - trimStart + 1;
+      if (len > 0 && equalsIgnoreCase(trimStart, len, serviceId)) {
+        return true;
+      }
+      if (*ptr == '\0') break;
+      ptr++;
+      start = ptr;
+    } else {
+      ptr++;
+    }
+  }
+
+  return false;
+}
+
+void raildataXmlClient::cleanFilter(const char* rawFilter, char* cleanedFilter, size_t maxLen) {
+    if (!rawFilter || rawFilter[0] == '\0') {
+        if (maxLen > 0) cleanedFilter[0] = '\0';
+        return;
+    }
+
+    size_t j = 0;
+    const char* ptr = rawFilter;
+
+    while (*ptr != '\0' && j < maxLen - 1) {
+        if (*ptr == ',') {
+            cleanedFilter[j++] = ',';
+            ptr++;
+            continue;
+        }
+        if (!isspace(*ptr)) {
+            cleanedFilter[j++] = tolower(*ptr);
+        }
+        ptr++;
+    }
+
+    cleanedFilter[j] = '\0';
+    return;
+}
+
+
 //
 // Updates the Departure Board data from the SOAP API
 //
-int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *messages, const char *crsCode, const char *customToken, int numRows, bool includeBusServices, const char *callingCrsCode) {
+int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *messages, const char *crsCode, const char *customToken, int numRows, bool includeBusServices, const char *callingCrsCode, const char *platforms) {
 
     unsigned long perfTimer=millis();
     bool bChunked = false;
@@ -237,10 +305,14 @@ int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *message
     }
 
     int reqRows = MAXBOARDSERVICES;
-    if (callingCrsCode[0]) reqRows = 10;   // Request maximum services if we're filtering
+    if (platforms[0]) reqRows = 10;   // Request maximum services if we're filtering platforms
     String data = F("<soap-env:Envelope xmlns:soap-env=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap-env:Header><ns0:AccessToken xmlns:ns0=\"http://thalesgroup.com/RTTI/2013-11-28/Token/types\"><ns0:TokenValue>");
     data += String(customToken) + F("</ns0:TokenValue></ns0:AccessToken></soap-env:Header><soap-env:Body><ns0:GetDepBoardWithDetailsRequest xmlns:ns0=\"http://thalesgroup.com/RTTI/2021-11-01/ldb/\"><ns0:numRows>") + String(reqRows) + F("</ns0:numRows><ns0:crs>");
-    data += String(crsCode) + F("</ns0:crs></ns0:GetDepBoardWithDetailsRequest></soap-env:Body></soap-env:Envelope>");
+    data += String(crsCode) + F("</ns0:crs>");
+    if (callingCrsCode[0]) {
+        data += "<ns0:filterCrs>" + String(callingCrsCode) + F("</ns0:filterCrs><ns0:filterType>to</ns0:filterType>");
+    }
+    data += F("</ns0:GetDepBoardWithDetailsRequest></soap-env:Body></soap-env:Envelope>");
 
     httpsClient.print("POST " + String(soapAPI) + F(" HTTP/1.1\r\n") +
       F("Host: ") + String(soapHost) + F("\r\n") +
@@ -296,12 +368,12 @@ int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *message
     tagLevel = 0;
     loadingWDSL=false;
     long dataReceived = 0;
-    if (callingCrsCode[0]) {
-        strcpy(filterCrs,callingCrsCode);
-        filter=true;
+    if (platforms[0]) {
+        filterPlatforms = true;
+        strcpy(platformFilter,platforms);
     } else {
-        strcpy(filterCrs,"");
-        filter=false;
+        filterPlatforms = false;
+        strcpy(platformFilter,"");
     }
     keepRoute=false;
 
@@ -339,7 +411,7 @@ int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *message
         lastErrorMessage += F("Data incomplete - no location in response");
         return UPD_DATA_ERROR;
     }
-    if (filter && !keepRoute && xStation.numServices) xStation.numServices--;   // Last route added needs filtering out
+    if (filterPlatforms && !keepRoute && xStation.numServices) xStation.numServices--;   // Last route added needs filtering out
 
     sanitiseData();
     if (includeBusServices) {
@@ -535,10 +607,6 @@ void raildataXmlClient::value(const char *value)
             addedStopLocation = true;
         }
         return;
-    } else if (filter && tagLevel == 11 && tagPath.endsWith(F("callingPoint/lt8:crs")) && addedStopLocation) {
-        // check if we should keep this route?
-        if (strcmp(filterCrs,value)==0) keepRoute = true;
-        return;
     } else if (tagLevel == 11 && tagPath.endsWith(F("callingPoint/lt8:st")) && addedStopLocation) {
         // check there's still room to add the eta of the calling point
         if ((strlen(xStation.service[id].calling) + strlen(value) + 4) < sizeof(xStation.service[0].calling)) {
@@ -570,8 +638,8 @@ void raildataXmlClient::value(const char *value)
         return;
     } else if (tagLevel == 8 && tagName == F("lt4:std")) {
         // Starting a new service
-        // If we're filtering on calling point, check if we need to keep the previous service (if there was one)
-        if (filter && !keepRoute && id>=0) {
+        // If we're filtering on platform numbers, check if we need to keep the previous service (if there was one)
+        if (filterPlatforms && !keepRoute && id>=0) {
             // We don't want this service, so clear it
             strcpy(xStation.service[id].sTime,"");
             strcpy(xStation.service[id].destination,"");
@@ -627,6 +695,7 @@ void raildataXmlClient::value(const char *value)
     } else if (tagLevel == 8 && tagName == (F("lt4:platform"))) {
         strncpy(xStation.service[id].platform,value,sizeof(xStation.service[0].platform)-1);
         xStation.service[id].platform[sizeof(xStation.service[0].platform)-1] = '\0';
+        if (filterPlatforms && serviceMatchesFilter(platformFilter,xStation.service[id].platform)) keepRoute=true;
         return;
     } else if (tagLevel == 6 && tagName == F("lt4:locationName")) {
         strncpy(xStation.location,value,sizeof(xStation.location)-1);
