@@ -18,14 +18,15 @@
  *
  */
 
+#define WIFI_USE_MANUAL_EAP 1
+
 // Release version number 
 #define VERSION_MAJOR 2
 #define VERSION_MINOR 0
 
-#include "esp_eap_client.h"
+#include "../secrets.h"
 
-#include "../credentials.h"
-
+#include <esp_eap_client.h>
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -2675,97 +2676,19 @@ void setup(void) {
   u8g2.sendBuffer();
   progressBar(F("Connecting to Wi-Fi"),20);
 
-  // TODO: Use https://github.com/JeroenBeemster/ESP32-WPA2-enterprise/blob/master/ESP32_WPA2enterprise.ino to connect to WPA2 Enterprise at work.
-
-
   WiFi.mode(WIFI_MODE_NULL);        // Reset the WiFi
   WiFi.setSleep(WIFI_PS_NONE);      // Turn off WiFi Powersaving
   WiFi.hostname(hostname);          // Set the hostname ("Departures Board")
   WiFi.mode(WIFI_STA);              // Enter WiFi station mode
 
-#if 0
-   // Manual connection to WPA2.
-   char ssid[] = WIFI_SSID;
-   char pass[] = WIFI_PASS;
-   WiFi.begin(ssid, pass);
-#endif 
-
-#if 1
+#if WIFI_USE_MANUAL_EAP
    // Manual connection to WPA2-Enterprise
-   char ssid[] = EAP_SSID;
-   char pass[] = EAP_PASS;
-   char user[] = EAP_USER_DOMAIN;
+   char ssid[] = MANUAL_EAP_SSID;
+   char pass[] = MANUAL_EAP_PASS;
+   char user[] = MANUAL_EAP_USER;
    esp_eap_client_use_default_cert_bundle(true);
    WiFi.begin(ssid, WPA2_AUTH_PEAP, user, user, pass, NULL, NULL, NULL, (int)ESP_EAP_TTLS_PHASE2_MSCHAPV2 );
-
-  progressBar(F("Conneting to EAP..."),21);
-
-#endif
-
-#if 0
-   // Manual connection to WPA2-Enterprise (with domain)
-   char ssid[] = EAP_SSID;
-   char pass[] = EAP_PASS;
-   char user[] = EAP_USER;
-   esp_eap_client_use_default_cert_bundle(true);
-   esp_eap_client_set_domain_name(EAP_DOMAIN);
-   WiFi.begin(ssid, WPA2_AUTH_PEAP, user, user, pass, NULL, NULL, NULL, (int)ESP_EAP_TTLS_PHASE2_MSCHAPV2 );
-
-  progressBar(F("Conneting to EAP..."),21);
-
-#endif
-
-#if 0
-  // Manual connection to WPA2 Enterprise with domain name.
-  const char ssid[] = EAP_SSID;
-  const char domain[] = EAP_DOMAIN;
-  const char user[] = EAP_USER;
-  const char pass[] = EAP_PASS;
-
-  WiFi.disconnect(true);
-
-  int err = 0;
-  err |= esp_eap_client_use_default_cert_bundle(true);
-  err |= esp_eap_client_set_domain_name(domain);
-  err |= esp_eap_client_set_identity((uint8_t*)user, strlen(user));
-  err |= esp_eap_client_set_username((uint8_t*)user, strlen(user));
-  err |= esp_eap_client_set_password((uint8_t*)pass, strlen(pass));
-  err |= esp_wifi_sta_enterprise_enable();
-
-  if ( err != 0 )
-  {
-    progressBar(F("Could not configure EAP :("), 20);
-  }
-
-  WiFi.begin(ssid);
-  progressBar(F("Connecting to EAP with domain..."),21);
-#endif
-
-#if 0
-  // Manual connection to WPA2 Enterprise without domain name.
-  const char ssid[] = EAP_SSID;
-  const char user[] = EAP_USER_DOMAIN;
-  const char pass[] = EAP_PASS;
-
-  WiFi.disconnect(true);
-
-  int err = 0;
-  err |= esp_eap_client_use_default_cert_bundle(true);
-  err |= esp_eap_client_set_identity((uint8_t*)user, strlen(user));
-  err |= esp_eap_client_set_username((uint8_t*)user, strlen(user));
-  err |= esp_eap_client_set_password((uint8_t*)pass, strlen(pass));
-  err |= esp_wifi_sta_enterprise_enable();
-  WiFi.begin(ssid);
-
-  if ( err != 0 )
-  {
-    progressBar(F("Could not configure EAP :("), 20);
-  }
-
-  progressBar(F("Connecting to EAP..."),21);
-#endif
-
-#if 0
+#else
   // WiFiManager captive portal.
   WiFiManager wm;                   // Start WiFiManager
   wm.setAPCallback(wmConfigModeCallback);     // Set the callback for config mode notification
@@ -2782,28 +2705,7 @@ void setup(void) {
 
   // Wait for WiFi connection
   while (WiFi.status() != WL_CONNECTED) {
-    switch (WiFi.status())
-    {
-      case WL_NO_SSID_AVAIL:
-        progressBar(F("SSID not found!"), 22);
-        break;
-      case WL_SCAN_COMPLETED:
-        progressBar(F("Scan completed."), 22);
-        break;
-      case WL_CONNECT_FAILED:
-        progressBar(F("Connection failed."), 22);
-        break;
-      case WL_CONNECTION_LOST:
-        progressBar(F("Connection lost."), 22);
-        break;
-      case WL_DISCONNECTED:
-        progressBar(F("Connecting..."), 22);
-        break;
-      case WL_IDLE_STATUS:
-        progressBar(F("Wi-Fi idle."), 22);
-        break;
-    }
-    delay(100);
+    delay(250);
   }
 
   // Get our IP address and store
