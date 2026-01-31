@@ -188,7 +188,7 @@ void raildataXmlClient::fixFullStop(char *input) {
 //
 // Updates the Departure Board data from the SOAP API
 //
-int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *messages, const char *crsCode, const char *customToken, int numRows, bool includeBusServices, const char *callingCrsCode) {
+int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *messages, const char *crsCode, const char *customToken, int numRows, bool includeBusServices, int timeOffset, const char *callingCrsCode) {
 
     unsigned long perfTimer=millis();
     bool bChunked = false;
@@ -240,7 +240,7 @@ int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *message
     if (callingCrsCode[0]) reqRows = 10;   // Request maximum services if we're filtering
     String data = F("<soap-env:Envelope xmlns:soap-env=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap-env:Header><ns0:AccessToken xmlns:ns0=\"http://thalesgroup.com/RTTI/2013-11-28/Token/types\"><ns0:TokenValue>");
     data += String(customToken) + F("</ns0:TokenValue></ns0:AccessToken></soap-env:Header><soap-env:Body><ns0:GetDepBoardWithDetailsRequest xmlns:ns0=\"http://thalesgroup.com/RTTI/2021-11-01/ldb/\"><ns0:numRows>") + String(reqRows) + F("</ns0:numRows><ns0:crs>");
-    data += String(crsCode) + F("</ns0:crs></ns0:GetDepBoardWithDetailsRequest></soap-env:Body></soap-env:Envelope>");
+    data += String(crsCode) + F("</ns0:crs><ns0:timeOffset>") + String(timeOffset) + F("</ns0:timeOffset></ns0:GetDepBoardWithDetailsRequest></soap-env:Body></soap-env:Envelope>");
 
     httpsClient.print("POST " + String(soapAPI) + F(" HTTP/1.1\r\n") +
       F("Host: ") + String(soapHost) + F("\r\n") +

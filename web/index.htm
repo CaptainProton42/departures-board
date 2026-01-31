@@ -17,7 +17,7 @@
   <div style="width: min(90%, 500px); margin: 0 auto; padding: 0 5px;">
     <form id="formsettings">
       <fieldset>
-        <legend style="position: relative; text-align: center; min-height: 45px; padding-top:8px;">
+        <legend style="position: relative; text-align: center; min-height: 45px; padding-top:8px;">f
           <div id="nrT" style="display:none">Rail Departures Board</div>
           <div id="tflT" style="display:none">Tube Arrivals Board</div>
           <div id="busT" style="display:none">Bus Departures Board</div>
@@ -169,6 +169,12 @@
             <label><input type="checkbox" id="noScrolling"> Suppress calling at / information messages</label>
           </div>
           <div class="checkbox">
+            <label><input type="checkbox" id="optTimeOffset"> Use time offset</label>
+          </div>
+          <div id="timeOffsetBox" style="display:none;">
+            <input id="timeOffset" type="number" min="-119" max="119" value="0" class="form-control input-md">
+          </div>
+          <div class="checkbox">
             <label><input type="checkbox" id="optFlip"> Flip the display 180&deg;</label>
           </div>
           <div class="checkbox">
@@ -291,6 +297,8 @@
       busFilter: document.getElementById("busFilter"),
       clearHistoryButton: document.getElementById("clearHistory"),
       busAtcoHistoryList: document.getElementById("busAtcoHistoryList"),
+      optTimeOffset: document.getElementById("optTimeOffset"),
+      timeOffset: document.getElementById("timeOffset"),
       optFlip: document.getElementById("optFlip"),
       optTZ: document.getElementById("optTZ"),
       customTZ: document.getElementById("customTZ")
@@ -581,6 +589,7 @@
     elements.clearHistoryButton.addEventListener("click", handleClearHistory);
     elements.busAtcoHistoryList.addEventListener('change', handleAtcoHistorySelect);
     elements.busFilter.addEventListener("blur", validateBusFilter);
+    elements.optTimeOffset.addEventListener("change", () => show("timeOffsetBox",isChecked("optTimeOffset")));
     elements.optTZ.addEventListener("change", () => show("customTZbox",isChecked("optTZ")));
     elements.customTZ.addEventListener("blur",validateTZ);
 
@@ -812,6 +821,10 @@
       setCheckbox("optTZ", elements.customTZ.value.length);
       show("customTZbox", elements.customTZ.value.length);
 
+      elements.timeOffset.value = s.timeOffset || 0;
+      setCheckbox("optTimeOffset", elements.timeOffset.value != 0);
+      show("timeOffsetBox", elements.customTZ.value != 0);
+
       setCheckbox("enableSleep", s.sleep);
       setCheckbox("showDate", s.showDate);
       setCheckbox("enableBuses", s.showBus);
@@ -955,6 +968,7 @@
 
     async function handleSave() {
       const s = appState.jsonSettings;
+      if (!isChecked("optTimeOffset")) elements.timeOffset.value = "0";
       if (!isChecked("optTZ")) elements.customTZ.value = "";
       s.station = appState.stationName;
       s.crs = appState.stationCRS;
@@ -973,6 +987,7 @@
       s.weather = isChecked("enableWeather");
       s.fastRefresh = isChecked("enableFastRefresh");
       s.noScroll = isChecked("noScrolling");
+      s.timeOffset = parseInt(elements.timeOffset.value)
       s.flip = isChecked("optFlip");
       s.sleepStarts = parseInt(elements.sleepStart.value);
       s.sleepEnds = parseInt(elements.sleepEnd.value);
