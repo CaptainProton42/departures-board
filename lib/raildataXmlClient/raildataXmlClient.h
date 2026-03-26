@@ -13,8 +13,7 @@
 #include <xmlListener.h>
 #include <xmlStreamingParser.h>
 #include <stationData.h>
-
-typedef void (*rdCallback) (int state, int id);
+#include <responseCodes.h>
 
 #define MAXHOSTSIZE 48
 #define MAXAPIURLSIZE 48
@@ -40,6 +39,7 @@ class raildataXmlClient: public xmlListener {
           char calling[MAXCALLINGSIZE];
           char serviceMessage[MAXMESSAGESIZE];
           int serviceType;
+          char serviceID[18];
         };
 
         struct rdiStation {
@@ -49,12 +49,20 @@ class raildataXmlClient: public xmlListener {
           rdiService service[MAXBOARDSERVICES];
         };
 
+        struct rdiLocation {
+          char location[MAXLOCATIONSIZE];
+          char scheduledTime[6];
+          char actualTime[6];
+        };
+
+        String greatGrandParentTagName = "";
         String grandParentTagName = "";
         String parentTagName = "";
         String tagName = "";
         String tagPath = "";
         int tagLevel = 0;
         bool loadingWDSL=false;
+        bool fetchingDepartures;
         String soapURL = "";
         char soapHost[MAXHOSTSIZE];
         char soapAPI[MAXAPIURLSIZE];
@@ -62,6 +70,9 @@ class raildataXmlClient: public xmlListener {
         String currentPath = "";
         rdiStation xStation;
         stnMessages xMessages;
+        rdiLocation thisLocation;
+        rdiLocation lastLocation;
+        String lastReport;
 
         bool addedStopLocation = false;
         int id=0;
@@ -75,17 +86,18 @@ class raildataXmlClient: public xmlListener {
         bool filterPlatforms = false;
         bool keepRoute = false;
 
-        rdCallback Xcb;
         static bool compareTimes(const rdiService& a, const rdiService& b);
         void removeHtmlTags(char* input);
         void replaceWord(char* input, const char* target, const char* replacement);
         void pruneFromPhrase(char* input, const char* target);
         void fixFullStop(char* input);
+        int timeDiff(const char *scheduled, const char *actual);
         void sanitiseData();
         void deleteService(int x);
         void trim(char* &start, char* &end);
         bool equalsIgnoreCase(const char* a, int a_len, const char* b);
         bool serviceMatchesFilter(const char* filter, const char* serviceId);
+        int getServiceDetails(const char *serviceID, const char *customToken);
 
         virtual void startTag(const char *tagName);
         virtual void endTag(const char *tagName);
@@ -95,8 +107,9 @@ class raildataXmlClient: public xmlListener {
 
     public:
         raildataXmlClient();
-        int init(const char *wsdlHost, const char *wsdlAPI, rdCallback RDcb);
+        int init(const char *wsdlHost, const char *wsdlAPI);
         void cleanFilter(const char* rawFilter, char* cleanedFilter, size_t maxLen);
-        int updateDepartures(rdStation *station, stnMessages *messages, const char *crsCode, const char *customToken, int numRows, bool includeBusServices, const char *callingCrsCode, const char *platforms, int timeOffset);
+        int fetchDepartures(rdStation *station, stnMessages *messages, const char *crsCode, const char *customToken, int numRows, bool includeBusServices, const char *callingCrsCode, const char *platforms, int timeOffset, bool fetchLastSeen);
+        void loadDepartures(rdStation *station, stnMessages *messages);
         String getLastError();
 };

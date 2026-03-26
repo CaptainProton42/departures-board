@@ -12,7 +12,6 @@
 #include <busDataClient.h>
 #include <JsonListener.h>
 #include <WiFiClientSecure.h>
-#include <stationData.h>
 
 busDataClient::busDataClient() {}
 
@@ -61,7 +60,7 @@ void busDataClient::trim(char* &start, char* &end) {
 
 // Compare strings case-insensitively
 bool busDataClient::equalsIgnoreCase(const char* a, int a_len, const char* b) {
-  for (int i = 0; i < a_len; i++) {
+  for (int i=0;i<a_len;i++) {
     if (tolower(a[i]) != tolower(b[i])) return false;
   }
   return b[a_len] == '\0';
@@ -120,7 +119,7 @@ void busDataClient::cleanFilter(const char* rawFilter, char* cleanedFilter, size
     return;
 }
 
-int busDataClient::updateDepartures(rdStation *station, const char *locationId, const char *filter, busClientCallback Xcb) {
+int busDataClient::fetchDepartures(rdStation *station, const char *locationId, const char *filter) {
 
     unsigned long perfTimer=millis();
     long dataReceived = 0;
@@ -131,7 +130,7 @@ int busDataClient::updateDepartures(rdStation *station, const char *locationId, 
     httpsClient.setInsecure();
     httpsClient.setTimeout(5000);
     httpsClient.setConnectionTimeout(5000);
-    station->boardChanged=false;
+    boardChanged=false;
 
     int retryCounter=0;
     while (!httpsClient.connect(apiHost,443) && (retryCounter++ < 10)){
@@ -143,8 +142,6 @@ int busDataClient::updateDepartures(rdStation *station, const char *locationId, 
     }
     String request = "GET /stops/" + String(locationId) + F("/departures HTTP/1.0\r\nHost: ") + String(apiHost) + F("\r\nConnection: close\r\n\r\n");
     httpsClient.print(request);
-    Xcb();
-    unsigned long ticker = millis()+800;
     retryCounter=0;
     while(!httpsClient.available() && retryCounter++ < 40) {
         delay(200);
@@ -289,16 +286,13 @@ int busDataClient::updateDepartures(rdStation *station, const char *locationId, 
                     }
                 }
             }
-            if (millis()>ticker) {
-                Xcb();
-                ticker = millis()+800;
-            }
         }
+        delay(5);
     }
 
     httpsClient.stop();
     if (millis() >= dataSendTimeout) {
-        lastErrorMsg = F("Timed out during msgs data receive operation");
+        lastErrorMsg = F("Timed out during data receive operation");
         return UPD_TIMEOUT;
     }
 
@@ -308,18 +302,25 @@ int busDataClient::updateDepartures(rdStation *station, const char *locationId, 
     for (int i=0;i<xBusStop.numServices;i++) replaceWord(xBusStop.service[i].destinationName,"&amp;","&");
 
     // Check if any of the services have changed
-    if (xBusStop.numServices != station->numServices) station->boardChanged=true;
-    else {
-        for (int i=0;i<xBusStop.numServices;i++) {
-            if (i>1) break; // Only check first two services
-            if (strcmp(xBusStop.service[i].destinationName,station->service[i].destination) || strcmp(xBusStop.service[i].lineName,station->service[i].via)) {
-                station->boardChanged=true;
-                break;
-            }
-        }
-    }
+    if (xBusStop.numServices != station->numServices) boardChanged=true;
+    else if (xBusStop.numServices && strcmp(xBusStop.service[0].destinationName,station->service[0].destination) || strcmp(xBusStop.service[0].lineName,station->service[0].via)) boardChanged=true;
 
+    if (bChunked) lastErrorMsg = F("WARNING: Chunked response! ");
+    UBaseType_t uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
+    if (boardChanged) {
+        lastErrorMsg += F("SUCCESS [Primary Service Changed] Update took: ");
+        lastErrorMsg += String(millis() - perfTimer) + F("ms [") + String(dataReceived) + F("] Max stack: ") + String(uxHighWaterMark);
+        return UPD_SUCCESS;
+    } else {
+        lastErrorMsg += F("SUCCESS Update took: ");
+        lastErrorMsg += String(millis() - perfTimer) + F("ms [") + String(dataReceived) + F("] Max stack: ") + String(uxHighWaterMark);
+        return UPD_NO_CHANGE;
+    }
+}
+
+void busDataClient::loadDepartures(rdStation *station) {
     // Update the callers data with the new data
+    station->boardChanged = boardChanged;
     station->numServices = xBusStop.numServices;
     for (int i=0;i<xBusStop.numServices;i++) {
         strcpy(station->service[i].destination,xBusStop.service[i].destinationName);
@@ -327,105 +328,6 @@ int busDataClient::updateDepartures(rdStation *station, const char *locationId, 
         strcpy(station->service[i].sTime,xBusStop.service[i].scheduled);
         strcpy(station->service[i].etd,xBusStop.service[i].expected);
     }
-
-    if (bChunked) lastErrorMsg = F("WARNING: Chunked response! ");
-    if (station->boardChanged) {
-        lastErrorMsg += F("SUCCESS [Primary Service Changed] Update took: ");
-        lastErrorMsg += String(millis() - perfTimer) + F("ms [") + String(dataReceived) + F("]");
-        return UPD_SUCCESS;
-    } else {
-        lastErrorMsg += F("SUCCESS Update took: ");
-        lastErrorMsg += String(millis() - perfTimer) + F("ms [") + String(dataReceived) + F("]");
-        return UPD_NO_CHANGE;
-    }
-}
-
-int busDataClient::getStopLongName(const char *locationId, char *locationName) {
-
-    unsigned long perfTimer=millis();
-    long dataReceived = 0;
-    bool bChunked = false;
-    lastErrorMsg = "";
-
-    JsonStreamingParser parser;
-    parser.setListener(this);
-    WiFiClientSecure httpsClient;
-    httpsClient.setInsecure();
-    httpsClient.setTimeout(5000);
-
-    int retryCounter=0;
-    while (!httpsClient.connect(apiHost,443) && (retryCounter++ < 15)){
-        delay(200);
-    }
-    if (retryCounter>=15) {
-        lastErrorMsg = F("Connection timeout");
-        return UPD_NO_RESPONSE;
-    }
-    String request = "GET /api/stops/" + String(locationId) + F(" HTTP/1.0\r\nHost: ") + String(apiHost) + F("\r\nConnection: close\r\n\r\n");
-    httpsClient.print(request);
-    retryCounter=0;
-    while(!httpsClient.available() && retryCounter++ < 40) {
-        delay(200);
-    }
-
-    if (!httpsClient.available()) {
-        // no response within 8 seconds so exit
-        httpsClient.stop();
-        lastErrorMsg = F("Response timeout");
-        return UPD_TIMEOUT;
-    }
-
-    // Parse status code
-    String statusLine = httpsClient.readStringUntil('\n');
-    if (!statusLine.startsWith(F("HTTP/")) || statusLine.indexOf(F("200 OK")) == -1) {
-        httpsClient.stop();
-
-        if (statusLine.indexOf(F("401")) > 0 || statusLine.indexOf(F("429")) > 0) {
-            lastErrorMsg = F("Not Authorized");
-            return UPD_UNAUTHORISED;
-        } else if (statusLine.indexOf(F("500")) || statusLine.indexOf(F("404")) > 0) {
-            lastErrorMsg = statusLine;
-            return UPD_DATA_ERROR;
-        } else {
-            lastErrorMsg = statusLine;
-            return UPD_HTTP_ERROR;
-        }
-    }
-
-    // Skip the remaining headers
-    while (httpsClient.connected() || httpsClient.available()) {
-        String line = httpsClient.readStringUntil('\n');
-        if (line == F("\r")) break;
-        if (line.startsWith(F("Transfer-Encoding:")) && line.indexOf(F("chunked")) >= 0) bChunked=true;
-    }
-
-    bool isBody = false;
-    char c;
-    longName = "";
-    unsigned long dataSendTimeout = millis() + 10000UL;
-    while((httpsClient.available() || httpsClient.connected()) && (millis() < dataSendTimeout)) {
-        while(httpsClient.available()) {
-            c = httpsClient.read();
-            dataReceived++;
-            if (c == '{' || c == '[') isBody = true;
-            if (isBody) parser.parse(c);
-        }
-        delay(25);
-    }
-    httpsClient.stop();
-    if (millis() >= dataSendTimeout) {
-        lastErrorMsg = F("Timed out during data receive operation - ");
-        lastErrorMsg += String(dataReceived) + F(" bytes received");
-        return UPD_TIMEOUT;
-    }
-
-    strncpy(locationName,longName.c_str(),sizeof(locationName)-1);
-    locationName[sizeof(locationName)-1] = '\0';
-
-    if (bChunked) lastErrorMsg = F("WARNING: Chunked response! ");
-    lastErrorMsg += F("SUCCESS Update took: ");
-    lastErrorMsg += String(millis() - perfTimer) + F("ms [") + String(dataReceived) + F("]");
-    return UPD_SUCCESS;
 }
 
 void busDataClient::whitespace(char c) {}

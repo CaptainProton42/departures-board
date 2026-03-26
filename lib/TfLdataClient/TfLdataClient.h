@@ -12,8 +12,7 @@
 #include <JsonListener.h>
 #include <JsonStreamingParser.h>
 #include <stationData.h>
-
-typedef void (*tflClientCallback) ();
+#include <responseCodes.h>
 
 #define MAXLINESIZE 20
 #define UGMAXREADSERVICES 20
@@ -34,11 +33,13 @@ class TfLdataClient: public JsonListener {
         };
 
         const char* apiHost = "api.tfl.gov.uk";
+        const char* tflAttribution = "Powered by TfL Open Data";
         String currentKey = "";
         String currentObject = "";
 
         int id=0;
         bool maxServicesRead = false;
+        bool boardChanged = false;
         ugStation xStation;
         stnMessages xMessages;
 
@@ -50,7 +51,8 @@ class TfLdataClient: public JsonListener {
         String lastErrorMsg = "";
 
         TfLdataClient();
-        int updateArrivals(rdStation *station, stnMessages *messages, const char *locationId, String apiKey, tflClientCallback Xcb);
+        int fetchArrivals(rdStation *station, stnMessages *messages, const char *locationId, const char *lineId, const char *lineDirection, bool noMessages, String apiKey);
+        void loadArrivals(rdStation *station, stnMessages *messages);
 
         virtual void whitespace(char c);
         virtual void startDocument();

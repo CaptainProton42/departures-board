@@ -12,11 +12,10 @@
 #include <TfLdataClient.h>
 #include <JsonListener.h>
 #include <WiFiClientSecure.h>
-#include <stationData.h>
 
 TfLdataClient::TfLdataClient() {}
 
-int TfLdataClient::updateArrivals(rdStation *station, stnMessages *messages, const char *locationId, String apiKey, tflClientCallback Xcb) {
+int TfLdataClient::fetchArrivals(rdStation *station, stnMessages *messages, const char *locationId, const char *lineId, const char *lineDirection, bool noMessages, String apiKey) {
 
     unsigned long perfTimer=millis();
     long dataReceived = 0;
@@ -27,23 +26,29 @@ int TfLdataClient::updateArrivals(rdStation *station, stnMessages *messages, con
     parser.setListener(this);
     WiFiClientSecure httpsClient;
     httpsClient.setInsecure();
-    httpsClient.setTimeout(5000);
-    httpsClient.setConnectionTimeout(5000);
+    httpsClient.setTimeout(8000);
+    httpsClient.setConnectionTimeout(8000);
 
-    station->boardChanged=false;
+    boardChanged = false;
 
     int retryCounter=0;
-    while (!httpsClient.connect(apiHost,443) && (retryCounter++ < 10)){
+    while (!httpsClient.connect(apiHost,443) && (retryCounter++ < 15)){
         delay(200);
     }
-    if (retryCounter>=10) {
+    if (retryCounter>=15) {
         lastErrorMsg = F("Connection timeout");
         return UPD_NO_RESPONSE;
     }
-    String request = "GET /StopPoint/" + String(locationId) + F("/Arrivals?app_key=") + apiKey + F(" HTTP/1.0\r\nHost: ") + String(apiHost) + F("\r\nConnection: close\r\n\r\n");
+    String request = "GET /";
+    if (strcmp(lineId,"all")) {
+        request+="Line/" + String(lineId) + F("/Arrivals/") + String(locationId);
+        if (lineDirection[0]) request+="?direction=" + String(lineDirection) + "&";
+        else request+="?";
+    } else {
+        request+="StopPoint/" + String(locationId) + F("/Arrivals?");
+    }
+    request+="app_key=" + apiKey + F(" HTTP/1.0\r\nHost: ") + String(apiHost) + F("\r\nConnection: close\r\n\r\n");
     httpsClient.print(request);
-    Xcb();
-    unsigned long ticker = millis()+800;
     retryCounter=0;
     while(!httpsClient.available() && retryCounter++ < 40) {
         delay(200);
@@ -96,12 +101,8 @@ int TfLdataClient::updateArrivals(rdStation *station, stnMessages *messages, con
             dataReceived++;
             if (c == '{' || c == '[') isBody = true;
             if (isBody) parser.parse(c);
-            if (millis()>ticker) {
-                Xcb();
-                ticker = millis()+800;
-            }
         }
-        delay(25);
+        delay(5);
     }
     httpsClient.stop();
     if (millis() >= dataSendTimeout) {
@@ -110,77 +111,75 @@ int TfLdataClient::updateArrivals(rdStation *station, stnMessages *messages, con
         return UPD_TIMEOUT;
     }
 
-    // Update the distruption messages
-    retryCounter=0;
-    while (!httpsClient.connect(apiHost, 443) && (retryCounter++ < 10)){
-        delay(200);
-    }
-    if (retryCounter>=10) {
-        lastErrorMsg = F("Connection timeout [msgs]");
-        return UPD_NO_RESPONSE;
-    }
-    request = "GET /StopPoint/" + String(locationId) + F("/Disruption?getFamily=true&flattenResponse=true&app_key=") + apiKey + F(" HTTP/1.0\r\nHost: ") + String(apiHost) + F("\r\nConnection: close\r\n\r\n");
-    httpsClient.print(request);
-    retryCounter=0;
-    while(!httpsClient.available() && retryCounter++ < 40) {
-        delay(200);
-    }
-
-    if (!httpsClient.available()) {
-        // no response within 8 seconds so exit
-        httpsClient.stop();
-        lastErrorMsg = F("Response timeout [msgs]");
-        return UPD_TIMEOUT;
-    }
-
-    // Parse status code
-    statusLine = httpsClient.readStringUntil('\n');
-    if (!statusLine.startsWith(F("HTTP/")) || statusLine.indexOf(F("200 OK")) == -1) {
-        httpsClient.stop();
-
-        if (statusLine.indexOf(F("401")) > 0) {
-            lastErrorMsg = F("Not Authorized [msgs]");
-            return UPD_UNAUTHORISED;
-        } else if (statusLine.indexOf(F("500")) > 0) {
-            lastErrorMsg = F("Server Error [msgs]");
-            return UPD_DATA_ERROR;
-        } else {
-            lastErrorMsg = statusLine;
-            return UPD_HTTP_ERROR;
+    if (!noMessages) {
+        // Update the distruption messages
+        retryCounter=0;
+        while (!httpsClient.connect(apiHost, 443) && (retryCounter++ < 15)){
+            delay(200);
         }
-    }
+        if (retryCounter>=15) {
+            lastErrorMsg = F("Connection timeout [msgs]");
+            return UPD_NO_RESPONSE;
+        }
+        request = "GET /StopPoint/" + String(locationId) + F("/Disruption?getFamily=true&flattenResponse=true&app_key=") + apiKey + F(" HTTP/1.0\r\nHost: ") + String(apiHost) + F("\r\nConnection: close\r\n\r\n");
+        httpsClient.print(request);
+        retryCounter=0;
+        while(!httpsClient.available() && retryCounter++ < 40) {
+            delay(200);
+        }
 
-    // Skip the remaining headers
-    while (httpsClient.connected() || httpsClient.available()) {
-        String line = httpsClient.readStringUntil('\n');
-        if (line == F("\r")) break;
-        if (line.startsWith(F("Transfer-Encoding:")) && line.indexOf(F("chunked")) >= 0) bChunked=true;
-    }
+        if (!httpsClient.available()) {
+            // no response within 8 seconds so exit
+            httpsClient.stop();
+            lastErrorMsg = F("Response timeout [msgs]");
+            return UPD_TIMEOUT;
+        }
 
-    isBody = false;
-    id=0;
-    maxServicesRead = false;
-    parser.reset();
+        // Parse status code
+        statusLine = httpsClient.readStringUntil('\n');
+        if (!statusLine.startsWith(F("HTTP/")) || statusLine.indexOf(F("200 OK")) == -1) {
+            httpsClient.stop();
 
-    dataSendTimeout = millis() + 10000UL;
-    while((httpsClient.available() || httpsClient.connected()) && (millis() < dataSendTimeout) && (!maxServicesRead)) {
-        while(httpsClient.available() && !maxServicesRead) {
-            c = httpsClient.read();
-            dataReceived++;
-            if (c == '{' || c == '[') isBody = true;
-            if (isBody) parser.parse(c);
-            if (millis()>ticker) {
-                Xcb();
-                ticker = millis()+800;
+            if (statusLine.indexOf(F("401")) > 0) {
+                lastErrorMsg = F("Not Authorized [msgs]");
+                return UPD_UNAUTHORISED;
+            } else if (statusLine.indexOf(F("500")) > 0) {
+                lastErrorMsg = F("Server Error [msgs]");
+                return UPD_DATA_ERROR;
+            } else {
+                lastErrorMsg = statusLine + " [Msgs]";
+                return UPD_HTTP_ERROR;
             }
         }
-        delay(25);
-    }
-    httpsClient.stop();
-    if (millis() >= dataSendTimeout) {
-        lastErrorMsg = F("Timed out during msgs data receive operation - ");
-        lastErrorMsg += String(dataReceived) + F(" bytes received");
-        return UPD_TIMEOUT;
+
+        // Skip the remaining headers
+        while (httpsClient.connected() || httpsClient.available()) {
+            String line = httpsClient.readStringUntil('\n');
+            if (line == F("\r")) break;
+            if (line.startsWith(F("Transfer-Encoding:")) && line.indexOf(F("chunked")) >= 0) bChunked=true;
+        }
+
+        isBody = false;
+        id=0;
+        maxServicesRead = false;
+        parser.reset();
+
+        dataSendTimeout = millis() + 10000UL;
+        while((httpsClient.available() || httpsClient.connected()) && (millis() < dataSendTimeout) && (!maxServicesRead)) {
+            while(httpsClient.available() && !maxServicesRead) {
+                c = httpsClient.read();
+                dataReceived++;
+                if (c == '{' || c == '[') isBody = true;
+                if (isBody) parser.parse(c);
+            }
+            delay(5);
+        }
+        httpsClient.stop();
+        if (millis() >= dataSendTimeout) {
+            lastErrorMsg = F("Timed out during msgs data receive operation - ");
+            lastErrorMsg += String(dataReceived) + F(" bytes received");
+            return UPD_TIMEOUT;
+        }
     }
 
     // Sort the services by arrival time
@@ -190,24 +189,37 @@ int TfLdataClient::updateArrivals(rdStation *station, stnMessages *messages, con
     // Limit results to the nearest UGMAXSERVICES services
     if (xStation.numServices > MAXBOARDSERVICES) xStation.numServices = MAXBOARDSERVICES;
 
+    // Add the attribution message
+    if (xMessages.numMessages < MAXBOARDMESSAGES) strcpy(xMessages.messages[xMessages.numMessages++],tflAttribution);
+
     // Check if any of the services have changed
-    if (xStation.numServices != station->numServices) station->boardChanged=true;
-    else {
-        for (int i=0;i<xStation.numServices;i++) {
-            if (i>1) break; // Only check first two services
-            if (strcmp(xStation.service[i].destinationName,station->service[i].destination)) {
-                station->boardChanged=true;
-                break;
-            }
-        }
+    if (xStation.numServices != station->numServices) boardChanged=true;
+    else if (xStation.numServices && strcmp(xStation.service[0].destinationName,station->service[0].destination)) boardChanged = true;
+    if (!noMessages) {
+        if (messages->numMessages != xMessages.numMessages) boardChanged = true;
     }
 
     // Remove line break formatting from messages
     for (int i=0;i<xMessages.numMessages;i++) {
-        replaceWord(xMessages.messages[i],"\\n","");
+        replaceWord(xMessages.messages[i],"\\n"," ");
     }
 
+    if (bChunked) lastErrorMsg = F("WARNING: Chunked response! ");
+    UBaseType_t uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
+    if (boardChanged) {
+        lastErrorMsg += F("SUCCESS [Primary Service Changed] Update took: ");
+        lastErrorMsg += String(millis() - perfTimer) + F("ms [") + String(dataReceived) + F("] Max Stack: ") + String(uxHighWaterMark);
+        return UPD_SUCCESS;
+    } else {
+        lastErrorMsg += F("SUCCESS Update took: ");
+        lastErrorMsg += String(millis() - perfTimer) + F("ms [") + String(dataReceived) + F("] Max Stack: ") + String(uxHighWaterMark);
+        return UPD_NO_CHANGE;
+    }
+}
+
+void TfLdataClient::loadArrivals(rdStation *station, stnMessages *messages) {
     // Update the callers data with the new data
+    station->boardChanged = boardChanged;
     station->numServices = xStation.numServices;
     for (int i=0;i<xStation.numServices;i++) {
         strcpy(station->service[i].destination,xStation.service[i].destinationName);
@@ -216,17 +228,6 @@ int TfLdataClient::updateArrivals(rdStation *station, stnMessages *messages, con
     }
     messages->numMessages = xMessages.numMessages;
     for (int i=0;i<xMessages.numMessages;i++) strcpy(messages->messages[i],xMessages.messages[i]);
-
-    if (bChunked) lastErrorMsg = F("WARNING: Chunked response! ");
-    if (station->boardChanged) {
-        lastErrorMsg += F("SUCCESS [Primary Service Changed] Update took: ");
-        lastErrorMsg += String(millis() - perfTimer) + F("ms [") + String(dataReceived) + F("]");
-        return UPD_SUCCESS;
-    } else {
-        lastErrorMsg += F("SUCCESS Update took: ");
-        lastErrorMsg += String(millis() - perfTimer) + F("ms [") + String(dataReceived) + F("]");
-        return UPD_NO_CHANGE;
-    }
 }
 
 //
@@ -289,8 +290,8 @@ void TfLdataClient::key(String key) {
     } else if (currentKey == F("description")) {
         // Next service message
         if (xMessages.numMessages<MAXBOARDMESSAGES) {
+            id = xMessages.numMessages;
             xMessages.numMessages++;
-            id = xMessages.numMessages-1;
         } else {
             // We've read all we need to
             maxServicesRead = true;
@@ -316,7 +317,14 @@ void TfLdataClient::value(String value) {
         strncpy(xStation.service[id].lineName,value.c_str(),MAXLINESIZE-1);
         xStation.service[id].lineName[MAXLINESIZE-1] = '\0';
     } else if (currentKey == F("description")) {
-        // Disruption message
+        // Disruption message, check for duplicates before adding
+        for (int i=0;i<id;i++) {
+            if (strcmp(xMessages.messages[i],value.c_str())==0) {
+                // Duplicate, don't add it
+                xMessages.numMessages--;
+                return;
+            }
+        }
         strncpy(xMessages.messages[id],value.c_str(),MAXMESSAGESIZE-1);
         xMessages.messages[id][MAXMESSAGESIZE-1] = '\0';
     }

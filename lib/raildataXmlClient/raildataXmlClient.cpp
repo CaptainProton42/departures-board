@@ -12,7 +12,6 @@
 #include <raildataXmlClient.h>
 #include <xmlListener.h>
 #include <WiFiClientSecure.h>
-#include <stationData.h>
 
 raildataXmlClient::raildataXmlClient() {
     firstDataLoad=true;
@@ -39,10 +38,8 @@ bool raildataXmlClient::compareTimes(const rdiService& a, const rdiService& b) {
 //
 // This function obtains the SOAP host and api url from the given wsdlHost and wsdlAPI
 //
-int raildataXmlClient::init(const char *wsdlHost, const char *wsdlAPI, rdCallback RDcb)
+int raildataXmlClient::init(const char *wsdlHost, const char *wsdlAPI)
 {
-    Xcb = RDcb;
-
     WiFiClientSecure httpsClient;
     httpsClient.setInsecure();
     httpsClient.setTimeout(10000);
@@ -97,6 +94,7 @@ int raildataXmlClient::init(const char *wsdlHost, const char *wsdlAPI, rdCallbac
     xmlStreamingParser parser;
     parser.setListener(this);
     parser.reset();
+    greatGrandParentTagName = "";
     grandParentTagName = "";
     parentTagName = "";
     tagName = "";
@@ -140,7 +138,7 @@ void raildataXmlClient::removeHtmlTags(char* input) {
         }
     }
 
-    *output = '\0'; // Null-terminate the output
+    *output = '\0';
 }
 
 //
@@ -194,7 +192,7 @@ void raildataXmlClient::trim(char* &start, char* &end) {
 
 // Compare strings case-insensitively
 bool raildataXmlClient::equalsIgnoreCase(const char* a, int a_len, const char* b) {
-  for (int i = 0; i < a_len; i++) {
+  for (int i=0;i<a_len;++i) {
     if (tolower(a[i]) != tolower(b[i])) return false;
   }
   return b[a_len] == '\0';
@@ -255,9 +253,9 @@ void raildataXmlClient::cleanFilter(const char* rawFilter, char* cleanedFilter, 
 
 
 //
-// Updates the Departure Board data from the SOAP API
+// Fetches the Departure Board data from the SOAP API
 //
-int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *messages, const char *crsCode, const char *customToken, int numRows, bool includeBusServices, const char *callingCrsCode, const char *platforms, int timeOffset) {
+int raildataXmlClient::fetchDepartures(rdStation *station, stnMessages *messages, const char *crsCode, const char *customToken, int numRows, bool includeBusServices, const char *callingCrsCode, const char *platforms, int timeOffset, bool fetchLastSeen) {
 
     unsigned long perfTimer=millis();
     bool bChunked = false;
@@ -270,7 +268,7 @@ int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *message
     addedStopLocation = false;
     strcpy(xStation.location,"");
 
-    for (int i=0;i<MAXBOARDSERVICES;i++) {
+    for (int i=0;i<MAXBOARDSERVICES;++i) {
       strcpy(xStation.service[i].sTime,"");
       strcpy(xStation.service[i].destination,"");
       strcpy(xStation.service[i].via,"");
@@ -280,13 +278,14 @@ int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *message
       strcpy(xStation.service[i].opco,"");
       strcpy(xStation.service[i].calling,"");
       strcpy(xStation.service[i].serviceMessage,"");
+      strcpy(xStation.service[i].serviceID,"");
       xStation.service[i].trainLength=0;
       xStation.service[i].classesAvailable=0;
       xStation.service[i].serviceType=0;
       xStation.service[i].isCancelled=false;
       xStation.service[i].isDelayed=false;
     }
-    for (int i=0;i<MAXBOARDMESSAGES;i++) strcpy(xMessages.messages[i],"");
+    for (int i=0;i<MAXBOARDMESSAGES;++i) strcpy(xMessages.messages[i],"");
     id=-1;
     coaches=0;
 
@@ -324,8 +323,6 @@ int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *message
       F("Content-Length: ") + String(data.length()) + F("\r\n\r\n") +
       data + F("\r\n\r\n"));
 
-    Xcb(1,0);   // progress callback
-    unsigned long ticker = millis()+800;
     retryCounter = 0;
     while(!httpsClient.available()) {
         delay(100);
@@ -365,11 +362,13 @@ int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *message
     xmlStreamingParser parser;
     parser.setListener(this);
     parser.reset();
+    greatGrandParentTagName = "";
     grandParentTagName = "";
     parentTagName = "";
     tagName = "";
     tagLevel = 0;
-    loadingWDSL=false;
+    loadingWDSL = false;
+    fetchingDepartures = true;
     long dataReceived = 0;
     if (platforms[0]) {
         filterPlatforms = true;
@@ -388,14 +387,6 @@ int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *message
             c = httpsClient.read();
             parser.parse(c);
             dataReceived++;
-            if (millis()>ticker) {
-                Xcb(2,xStation.numServices);    // Callback progress
-                ticker = millis()+800;
-            }
-        }
-        if (millis()>ticker) {
-            Xcb(2,id);      // Callback with progress
-            ticker = millis()+800;
         }
         delay(5);
     }
@@ -418,7 +409,7 @@ int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *message
     sanitiseData();
     if (includeBusServices) {
         // Look for any included bus services, and sort if found
-        for (int i=0;i<xStation.numServices;i++) {
+        for (int i=0;i<xStation.numServices;++i) {
             if (xStation.service[i].serviceType == BUS) {
                 size_t arraySize = xStation.numServices;
                 std::sort(xStation.service, xStation.service+arraySize,compareTimes);
@@ -435,70 +426,227 @@ int raildataXmlClient::updateDepartures(rdStation *station, stnMessages *message
         }
     }
 
+    // Handle getting last seen location from GetServiceDetails api
+    if (fetchLastSeen && xStation.numServices && xStation.service[0].serviceID[0] && strcmp(xStation.location,xStation.service[0].origin)) {
+        lastReport = "";
+        getServiceDetails(xStation.service[0].serviceID, customToken);
+        lastErrorMessage+=F("\n[End GetServiceDetails]\n");
+        if ((strlen(xStation.service[0].calling) + lastReport.length()) < MAXCALLINGSIZE) {
+            strcat(xStation.service[0].calling, lastReport.c_str());
+        }
+    }
+
     bool noUpdate = true;
+    bool secondaryChange = true;
     if (!firstDataLoad) {
         // Check for any changes
-        if (messages->numMessages != xMessages.numMessages || station->numServices != xStation.numServices || station->platformAvailable != xStation.platformAvailable || strcmp(station->location,xStation.location)) noUpdate=false;
+        if (messages->numMessages != xMessages.numMessages || station->numServices != xStation.numServices || station->platformAvailable != xStation.platformAvailable || strcmp(station->location,xStation.location)) {
+            noUpdate=false;
+            secondaryChange = false;
+        }
         else {
-            for (int i=0;i<xMessages.numMessages;i++) {
+            for (int i=0;i<xMessages.numMessages;++i) {
                 if (strcmp(messages->messages[i],xMessages.messages[i])) {
                     noUpdate=false;
                     break;
                 }
             }
-            if (noUpdate) {
-                for (int i=0;i<xStation.numServices;i++) {
-                    if (strcmp(station->service[i].sTime, xStation.service[i].sTime) || strcmp(station->service[i].destination, xStation.service[i].destination) || strcmp(station->service[i].via, xStation.service[i].via) || strcmp(station->service[i].etd, xStation.service[i].etd) || strcmp(station->service[i].platform, xStation.service[i].platform)) {
-                        noUpdate=false;
-                        break;
-                    }
-                    if (station->service[i].isCancelled != xStation.service[i].isCancelled || station->service[i].isDelayed != xStation.service[i].isDelayed || station->service[i].trainLength != xStation.service[i].trainLength || station->service[i].classesAvailable != xStation.service[i].classesAvailable || station->service[i].serviceType != xStation.service[i].serviceType) {
-                        noUpdate=false;
-                        break;
-                    }
+            if (strcmp(station->calling,xStation.service[0].calling)) noUpdate=false;
+            for (int i=0;i<xStation.numServices;++i) {
+                if (strcmp(station->service[i].sTime, xStation.service[i].sTime) || strcmp(station->service[i].destination, xStation.service[i].destination) || strcmp(station->service[i].via, xStation.service[i].via) || strcmp(station->service[i].etd, xStation.service[i].etd) || strcmp(station->service[i].platform, xStation.service[i].platform)) {
+                    noUpdate=false;
+                    if (i==0 && (strcmp(station->service[i].destination, xStation.service[i].destination) || strcmp(station->service[i].via, xStation.service[i].via))) secondaryChange = false;
+                    break;
+                }
+                if (station->service[i].isCancelled != xStation.service[i].isCancelled || station->service[i].isDelayed != xStation.service[i].isDelayed || station->service[i].trainLength != xStation.service[i].trainLength || station->service[i].classesAvailable != xStation.service[i].classesAvailable || station->service[i].serviceType != xStation.service[i].serviceType) {
+                    noUpdate=false;
+                    if (i==0) secondaryChange = false;
+                    break;
                 }
             }
         }
     } else {
         firstDataLoad=false;
         noUpdate=false;
+        secondaryChange=false;
     }
 
-    if (!noUpdate) {
-        // copy everything back to the caller's structure
-        messages->numMessages = xMessages.numMessages;
-        station->numServices = xStation.numServices;
-        strcpy(station->location,xStation.location);
-        station->platformAvailable = xStation.platformAvailable;
-        for (int i=0;i<xMessages.numMessages;i++) strcpy(messages->messages[i],xMessages.messages[i]);
-        for (int i=0;i<xStation.numServices;i++) {
-            strcpy(station->service[i].sTime, xStation.service[i].sTime);
-            strcpy(station->service[i].destination, xStation.service[i].destination);
-            strcpy(station->service[i].via, xStation.service[i].via);
-            strcpy(station->service[i].etd, xStation.service[i].etd);
-            strcpy(station->service[i].platform, xStation.service[i].platform);
-            station->service[i].isCancelled = xStation.service[i].isCancelled;
-            station->service[i].isDelayed = xStation.service[i].isDelayed;
-            station->service[i].trainLength = xStation.service[i].trainLength;
-            station->service[i].classesAvailable = xStation.service[i].classesAvailable;
-            strcpy(station->service[i].opco, xStation.service[i].opco);
-            station->service[i].serviceType = xStation.service[i].serviceType;
-        }
-        if (xStation.numServices) {
-            strcpy(station->calling,xStation.service[0].calling);
-            strcpy(station->origin,xStation.service[0].origin);
-            strcpy(station->serviceMessage,xStation.service[0].serviceMessage);
-        }
-    }
-
-    Xcb(3,xStation.numServices);
+    UBaseType_t uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
     if (noUpdate) {
-        lastErrorMessage += "Success (No Changes) - data [" + String(dataReceived) + F("] load took ") + String(millis()-perfTimer) + F("ms");
+        lastErrorMessage += "Success (No Changes) - data [" + String(dataReceived) + F("] load took ") + String(millis()-perfTimer) + F("ms. Max stack: ") + String(uxHighWaterMark);
         return UPD_NO_CHANGE;
     } else {
-        lastErrorMessage += "Success - data [" + String(dataReceived) + F("] took ") + String(millis()-perfTimer) + F("ms");
-        return UPD_SUCCESS;
+        if (secondaryChange) {
+            lastErrorMessage += "Success (Secondary Changes) - data [" + String(dataReceived) + F("] took ") + String(millis()-perfTimer) + F("ms. Max stack: ") + String(uxHighWaterMark);
+            return UPD_SEC_CHANGE;
+        } else {
+            lastErrorMessage += "Success - data [" + String(dataReceived) + F("] took ") + String(millis()-perfTimer) + F("ms. Max stack: ") + String(uxHighWaterMark);
+            return UPD_SUCCESS;
+        }
     }
+}
+
+void raildataXmlClient::loadDepartures(rdStation *station, stnMessages *messages) {
+    // copy everything back to the caller's structure
+    messages->numMessages = xMessages.numMessages;
+    station->numServices = xStation.numServices;
+    strcpy(station->location,xStation.location);
+    station->platformAvailable = xStation.platformAvailable;
+    for (int i=0;i<xMessages.numMessages;++i) strcpy(messages->messages[i],xMessages.messages[i]);
+    for (int i=0;i<xStation.numServices;++i) {
+        strcpy(station->service[i].sTime, xStation.service[i].sTime);
+        strcpy(station->service[i].destination, xStation.service[i].destination);
+        strcpy(station->service[i].via, xStation.service[i].via);
+        strcpy(station->service[i].etd, xStation.service[i].etd);
+        strcpy(station->service[i].platform, xStation.service[i].platform);
+        station->service[i].isCancelled = xStation.service[i].isCancelled;
+        station->service[i].isDelayed = xStation.service[i].isDelayed;
+        station->service[i].trainLength = xStation.service[i].trainLength;
+        station->service[i].classesAvailable = xStation.service[i].classesAvailable;
+        strcpy(station->service[i].opco, xStation.service[i].opco);
+        station->service[i].serviceType = xStation.service[i].serviceType;
+    }
+    if (xStation.numServices) {
+        strcpy(station->calling,xStation.service[0].calling);
+        strcpy(station->origin,xStation.service[0].origin);
+        strcpy(station->serviceMessage,xStation.service[0].serviceMessage);
+    }
+}
+
+int raildataXmlClient::getServiceDetails(const char *serviceID, const char *customToken) {
+
+    unsigned long perfTimer=millis();
+    bool bChunked = false;
+    lastErrorMessage += F("\n[GetServiceDetails]\n");
+    lastReport = "";
+
+    // Reset the counters
+    WiFiClientSecure httpsClient;
+    httpsClient.setInsecure();
+    httpsClient.setTimeout(8000);
+    httpsClient.setConnectionTimeout(8000);
+    httpsClient.setNoDelay(false);
+
+    int retryCounter=0; //retry counter
+    while((!httpsClient.connect(soapHost, 443)) && (retryCounter < 10)) {
+        delay(100);
+        retryCounter++;
+    }
+    if(retryCounter>=10) {
+        lastErrorMessage += F("Connect time out fetching service details");    // No response within 3s
+        return UPD_NO_RESPONSE;
+    }
+
+    String data = F("<soap-env:Envelope xmlns:soap-env=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap-env:Header><ns0:AccessToken xmlns:ns0=\"http://thalesgroup.com/RTTI/2013-11-28/Token/types\"><ns0:TokenValue>");
+    data += String(customToken) + F("</ns0:TokenValue></ns0:AccessToken></soap-env:Header><soap-env:Body><ns0:GetServiceDetailsRequest xmlns:ns0=\"http://thalesgroup.com/RTTI/2021-11-01/ldb/\"><ns0:serviceID>");
+    data += String(serviceID) + F("</ns0:serviceID></ns0:GetServiceDetailsRequest></soap-env:Body></soap-env:Envelope>");
+
+    httpsClient.print("POST " + String(soapAPI) + F(" HTTP/1.1\r\n") +
+      F("Host: ") + String(soapHost) + F("\r\n") +
+      F("Content-Type: text/xml;charset=UTF-8\r\n") +
+      F("Connection: close\r\n") +
+      F("Content-Length: ") + String(data.length()) + F("\r\n\r\n") +
+      data + F("\r\n\r\n"));
+
+    retryCounter = 0;
+    while(!httpsClient.available()) {
+        delay(100);
+        retryCounter++;
+        if (retryCounter >= 80) {
+            lastErrorMessage += F("Service Details time out (GET)");
+            return UPD_TIMEOUT;     // No response within 8s
+        }
+    }
+
+    unsigned long dataSendTimeout = millis() + 1000UL;
+    while((httpsClient.available() || httpsClient.connected()) && (millis() < dataSendTimeout)) {
+        String line = httpsClient.readStringUntil('\n');
+        // check for success code...
+        if (line.startsWith(F("HTTP"))) {
+            if (line.indexOf(F("200 OK")) == -1) {
+                httpsClient.stop();
+                if (line.indexOf(F("401")) > 0) {
+                    lastErrorMessage += line;
+                    return UPD_UNAUTHORISED;
+                } else if (line.indexOf(F("500")) > 0) {
+                    lastErrorMessage += line;
+                    return UPD_DATA_ERROR;
+                } else {
+                    lastErrorMessage += line;
+                    return UPD_HTTP_ERROR;
+                }
+            }
+        } else if (line.startsWith(F("Transfer-Encoding:")) && line.indexOf(F("chunked")) >= 0) bChunked=true;
+        if (line == F("\r")) {
+            // Headers received
+            break;
+        }
+        delay(1);
+    }
+
+    xmlStreamingParser parser;
+    parser.setListener(this);
+    parser.reset();
+    greatGrandParentTagName = "";
+    grandParentTagName = "";
+    parentTagName = "";
+    tagName = "";
+    tagLevel = 0;
+    loadingWDSL = false;
+    fetchingDepartures = false;
+    long dataReceived = 0;
+    lastLocation.actualTime[0]='\0';
+    lastLocation.location[0]='\0';
+    lastLocation.scheduledTime[0]='\0';
+    thisLocation.actualTime[0]='\0';
+    thisLocation.location[0]='\0';
+    thisLocation.scheduledTime[0]='\0';
+
+    char c;
+    dataSendTimeout = millis() + 12000UL;
+    perfTimer=millis(); // Reset the data load timer
+    while((httpsClient.available() || httpsClient.connected()) && (millis() < dataSendTimeout)) {
+        while (httpsClient.available()) {
+            c = httpsClient.read();
+            parser.parse(c);
+            dataReceived++;
+        }
+        delay(5);
+    }
+
+    httpsClient.stop();
+
+    if (bChunked) lastErrorMessage += F("WARNING: Chunked response! ");
+    if (millis() >= dataSendTimeout) {
+        lastErrorMessage += F("Timed out during service details data receive operation - ");
+        lastErrorMessage += String(dataReceived) + F(" bytes received");
+        return UPD_TIMEOUT;
+    }
+
+    // Handle possible last location
+    if (thisLocation.actualTime[0]) {
+        strcpy(lastLocation.location,thisLocation.location);
+        strcpy(lastLocation.actualTime,thisLocation.actualTime);
+        strcpy(lastLocation.scheduledTime,thisLocation.scheduledTime);
+    }
+
+    if (lastLocation.location[0] && lastLocation.actualTime[0] && lastLocation.scheduledTime[0]) {
+        lastReport = ".  Last seen at " + String(lastLocation.location);
+        if (strcmp(lastLocation.actualTime,"On ti")==0) {
+            lastReport += " (" + String(lastLocation.scheduledTime) + F("), on time.");
+        } else if (isdigit(lastLocation.actualTime[0]) && isdigit(lastLocation.scheduledTime[0])) {
+            lastReport += " (" + String(lastLocation.actualTime) + F("), ");
+            int offMins = timeDiff(lastLocation.scheduledTime,lastLocation.actualTime);
+            String minText = "mins";
+            if (abs(offMins)==1) minText = "min";
+            if (offMins>0) lastReport += String(offMins) + F(" ") + minText + F(" early.");
+            else lastReport += String(abs(offMins)) + F(" ") + minText + F(" late.");
+        }
+    }
+
+    UBaseType_t uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
+    lastErrorMessage += "Success - data [" + String(dataReceived) + F("] took ") + String(millis()-perfTimer) + F("ms. Max stack: ") + String(uxHighWaterMark);
+    return UPD_SUCCESS;
 }
 
 String raildataXmlClient::getLastError() {
@@ -513,10 +661,28 @@ void raildataXmlClient::deleteService(int x) {
     return;
   }
   // shuffle the other services down
-  for (int i=x;i<xStation.numServices-1;i++) {
+  for (int i=x;i<xStation.numServices-1;++i) {
     xStation.service[i] = xStation.service[i+1];
   }
   xStation.numServices--;
+}
+
+int raildataXmlClient::timeDiff(const char *scheduled, const char *actual) {
+    int h_scheduled, m_scheduled;
+    int h_actual, m_actual;
+
+    sscanf(scheduled, "%d:%d", &h_scheduled, &m_scheduled);
+    sscanf(actual, "%d:%d", &h_actual, &m_actual);
+
+    int mins_scheduled = (h_scheduled * 60) + m_scheduled;
+    int mins_actual = (h_actual * 60) + m_actual;
+    int diff = mins_scheduled - mins_actual;
+
+    // Handle midnight wrap-around
+    if (diff > 720) diff -= 1440;
+    else if (diff < -720) diff += 1440;
+
+    return diff;
 }
 
 void raildataXmlClient::sanitiseData() {
@@ -532,7 +698,7 @@ void raildataXmlClient::sanitiseData() {
   removeHtmlTags(xStation.location);
   replaceWord(xStation.location,"&amp;","&");
 
-  for (int i=0;i<xStation.numServices;i++) {
+  for (int i=0;i<xStation.numServices;++i) {
     // first change any &lt; &gt;
     removeHtmlTags(xStation.service[i].destination);
     replaceWord(xStation.service[i].destination,"&amp;","&");
@@ -546,16 +712,19 @@ void raildataXmlClient::sanitiseData() {
     fixFullStop(xStation.service[i].serviceMessage);
   }
 
-  for (int i=0;i<xMessages.numMessages;i++) {
+  for (int i=0;i<xMessages.numMessages;++i) {
     // Remove all non printing characters from messages...
-    int j = 0; // Index for the modified array
+    int j=0;
     for (int x=0; xMessages.messages[i][x] != '\0'; ++x) {
         if (isprint(xMessages.messages[i][x])) {
             xMessages.messages[i][j] = xMessages.messages[i][x];
             ++j;
+        } else if (xMessages.messages[i][x] == '\n') {
+            xMessages.messages[i][j] = ' ';
+            ++j;
         }
     }
-    xMessages.messages[i][j] = '\0'; // Null-terminate the modified array
+    xMessages.messages[i][j] = '\0';
     replaceWord(xMessages.messages[i],"&lt;","<");
     replaceWord(xMessages.messages[i],"&gt;",">");
     replaceWord(xMessages.messages[i],"<p>","");
@@ -578,6 +747,7 @@ void raildataXmlClient::sanitiseData() {
 void raildataXmlClient::startTag(const char *tag)
 {
     tagLevel++;
+    greatGrandParentTagName = grandParentTagName;
     grandParentTagName = parentTagName;
     parentTagName = tagName;
     tagName = String(tag);
@@ -589,7 +759,8 @@ void raildataXmlClient::endTag(const char *tag)
     tagLevel--;
     tagName = parentTagName;
     parentTagName=grandParentTagName;
-    grandParentTagName="??";
+    grandParentTagName=greatGrandParentTagName;
+    greatGrandParentTagName="??";
 }
 
 void raildataXmlClient::parameter(const char *param)
@@ -600,120 +771,151 @@ void raildataXmlClient::value(const char *value)
 {
     if (loadingWDSL) return;
 
-    if (tagLevel<6 || tagLevel==9 || tagLevel>11) return;
+    if (fetchingDepartures) {
 
-    if (tagLevel == 11 && tagPath.endsWith(F("callingPoint/lt8:locationName"))) {
-        if ((strlen(xStation.service[id].calling) + strlen(value) + 13) < sizeof(xStation.service[0].calling)) {
-            // Add the calling point, add a comma prefix if this isn't the first one
-            if (xStation.service[id].calling[0]) strcat(xStation.service[id].calling,", ");
-            strcat(xStation.service[id].calling,value);
-            addedStopLocation = true;
+        if (tagLevel<6 || tagLevel==9 || tagLevel>11) return;
+
+        if (tagLevel == 11 && tagPath.endsWith(F("callingPoint/lt8:locationName"))) {
+            if ((strlen(xStation.service[id].calling) + strlen(value) + 13) < sizeof(xStation.service[0].calling)) {
+                // Add the calling point, add a comma prefix if this isn't the first one
+                if (xStation.service[id].calling[0]) strcat(xStation.service[id].calling,", ");
+                strcat(xStation.service[id].calling,value);
+                addedStopLocation = true;
+            }
+            return;
+        } else if (tagLevel == 11 && tagPath.endsWith(F("callingPoint/lt8:st")) && addedStopLocation) {
+            // check there's still room to add the eta of the calling point
+            if ((strlen(xStation.service[id].calling) + strlen(value) + 4) < sizeof(xStation.service[0].calling)) {
+                strcat(xStation.service[id].calling," (");
+                strcat(xStation.service[id].calling,value);
+                strcat(xStation.service[id].calling,")");
+            }
+            addedStopLocation = false;
+            return;
+        } else if (tagLevel == 11 && tagName == F("lt7:coachClass")) {
+            if (strcmp(value,"First")==0) xStation.service[id].classesAvailable = xStation.service[id].classesAvailable | 1;
+            else if (strcmp(value,"Standard")==0) xStation.service[id].classesAvailable = xStation.service[id].classesAvailable | 2;
+            coaches++;
+            return;
+        } else if (tagLevel == 8 && tagName == F("lt4:length")) {
+            xStation.service[id].trainLength = String(value).toInt();
+            return;
+        } else if (tagLevel == 8 && tagName == F("lt4:operator")) {
+            strncpy(xStation.service[id].opco,value,sizeof(xStation.service[0].opco)-1);
+            xStation.service[id].opco[sizeof(xStation.service[0].opco)-1] = '\0';
+            return;
+        } else if (tagLevel == 8 && tagName == F("lt4:serviceID")) {
+            strncpy(xStation.service[id].serviceID,value,sizeof(xStation.service[0].serviceID)-1);
+            xStation.service[id].serviceID[sizeof(xStation.service[0].serviceID)-1] = '\0';
+            return;
+        } else if (tagLevel == 10 && tagPath.startsWith(F("lt5:origin/lt4:location/lt4:loc"))) {
+            strncpy(xStation.service[id].origin,value,sizeof(xStation.service[0].origin)-1);
+            xStation.service[id].origin[sizeof(xStation.service[0].origin)-1] = '\0';
+            return;
+        } else if (tagLevel == 8 && tagName == F("lt4:serviceType")) {
+            if (strcmp(value,"train")==0) xStation.service[id].serviceType = TRAIN;
+            else if (strcmp(value,"bus")==0) xStation.service[id].serviceType = BUS;
+            return;
+        } else if (tagLevel == 8 && tagName == F("lt4:std")) {
+            // Starting a new service
+            // If we're filtering on platform numbers, check if we need to keep the previous service (if there was one)
+            if (filterPlatforms && !keepRoute && id>=0) {
+                // We don't want this service, so clear it
+                strcpy(xStation.service[id].sTime,"");
+                strcpy(xStation.service[id].destination,"");
+                strcpy(xStation.service[id].via,"");
+                strcpy(xStation.service[id].origin,"");
+                strcpy(xStation.service[id].etd,"");
+                strcpy(xStation.service[id].platform,"");
+                strcpy(xStation.service[id].opco,"");
+                strcpy(xStation.service[id].calling,"");
+                strcpy(xStation.service[id].serviceMessage,"");
+                xStation.service[id].trainLength=0;
+                xStation.service[id].classesAvailable=0;
+                xStation.service[id].serviceType=0;
+                xStation.service[id].isCancelled=false;
+                xStation.service[id].isDelayed=false;
+                xStation.numServices--;
+                id--;
+            }
+            keepRoute = false;  // reset for next route
+            if (id>=0) {
+                if (xStation.service[id].trainLength == 0) xStation.service[id].trainLength = coaches;
+            }
+            coaches=0;
+            if (id < MAXBOARDSERVICES-1) {
+                id++;
+                xStation.numServices++;
+            }
+            strncpy(xStation.service[id].sTime,value,sizeof(xStation.service[0].sTime));
+            xStation.service[id].sTime[sizeof(xStation.service[0].sTime)-1] = '\0';
+            return;
+        } else if (tagLevel == 8 && tagName == F("lt4:etd")) {
+            strncpy(xStation.service[id].etd,value,sizeof(xStation.service[0].etd));
+            xStation.service[id].etd[sizeof(xStation.service[0].etd)-1] = '\0';
+            return;
+        } else if (tagLevel == 10 && tagPath.startsWith(F("lt5:destination/lt4:location/lt4:lo"))) {
+            strncpy(xStation.service[id].destination,value,sizeof(xStation.service[0].destination)-1);
+            xStation.service[id].destination[sizeof(xStation.service[0].destination)-1] = '\0';
+            return;
+        } else if (tagLevel == 10 && tagPath == F("lt5:destination/lt4:location/lt4:via")) {
+            strncpy(xStation.service[id].via,value,sizeof(xStation.service[0].via)-1);
+            xStation.service[id].via[sizeof(xStation.service[0].via)-1] = '\0';
+            return;
+        } else if (tagLevel == 8 && tagName == F("lt4:delayReason")) {
+            strncpy(xStation.service[id].serviceMessage,value,sizeof(xStation.service[0].serviceMessage)-1);
+            xStation.service[id].serviceMessage[sizeof(xStation.service[0].serviceMessage)-1] = '\0';
+            xStation.service[id].isDelayed = true;
+            return;
+        } else if (tagLevel == 8 && tagName == F("lt4:cancelReason")) {
+            strncpy(xStation.service[id].serviceMessage,value,sizeof(xStation.service[0].serviceMessage)-1);
+            xStation.service[id].serviceMessage[sizeof(xStation.service[0].serviceMessage)-1] = '\0';
+            xStation.service[id].isCancelled = true;
+            return;
+        } else if (tagLevel == 8 && tagName == (F("lt4:platform"))) {
+            strncpy(xStation.service[id].platform,value,sizeof(xStation.service[0].platform)-1);
+            xStation.service[id].platform[sizeof(xStation.service[0].platform)-1] = '\0';
+            if (filterPlatforms && serviceMatchesFilter(platformFilter,xStation.service[id].platform)) keepRoute=true;
+            return;
+        } else if (tagLevel == 6 && tagName == F("lt4:locationName")) {
+            strncpy(xStation.location,value,sizeof(xStation.location)-1);
+            xStation.location[sizeof(xStation.location)-1] = '\0';
+            return;
+        } else if (tagLevel == 6 && tagName == F("lt4:platformAvailable")) {
+            if (strcmp(value,"true")==0) xStation.platformAvailable = true;
+            return;
+        } else if (tagPath.endsWith(F("nrccMessages/lt:message"))) {    // tagLevel 7
+            if (xMessages.numMessages < MAXBOARDMESSAGES) {
+                xMessages.numMessages++;
+                strncpy(xMessages.messages[xMessages.numMessages-1],value,sizeof(xMessages.messages[0])-1);
+                xMessages.messages[xMessages.numMessages-1][sizeof(xMessages.messages[0])-1] = '\0';
+            }
+            return;
         }
-        return;
-    } else if (tagLevel == 11 && tagPath.endsWith(F("callingPoint/lt8:st")) && addedStopLocation) {
-        // check there's still room to add the eta of the calling point
-        if ((strlen(xStation.service[id].calling) + strlen(value) + 4) < sizeof(xStation.service[0].calling)) {
-            strcat(xStation.service[id].calling," (");
-            strcat(xStation.service[id].calling,value);
-            strcat(xStation.service[id].calling,")");
+    } else {
+        // Loading service details
+        if (tagLevel == 9 && greatGrandParentTagName.endsWith(F("previousCallingPoints"))) {
+            if (tagPath.endsWith(F("callingPoint/lt8:locationName"))) {
+                // Next location, save the previous one if it has an actual time
+                if (thisLocation.actualTime[0]) {
+                    strcpy(lastLocation.location,thisLocation.location);
+                    strcpy(lastLocation.actualTime,thisLocation.actualTime);
+                    strcpy(lastLocation.scheduledTime,thisLocation.scheduledTime);
+                }
+                strncpy(thisLocation.location,value,MAXLOCATIONSIZE-1);
+                thisLocation.actualTime[0]='\0';
+                thisLocation.scheduledTime[0]='\0';
+                return;
+            } else if (tagPath.endsWith(F("callingPoint/lt8:st"))) {
+                strncpy(thisLocation.scheduledTime,value,sizeof(thisLocation.scheduledTime)-1);
+                thisLocation.scheduledTime[sizeof(thisLocation.scheduledTime)-1] = '\0';
+                return;
+            } else if (tagPath.endsWith(F("callingPoint/lt8:at"))) {
+                strncpy(thisLocation.actualTime,value,sizeof(thisLocation.actualTime)-1);
+                thisLocation.actualTime[sizeof(thisLocation.actualTime)-1] = '\0';
+                return;
+            }
         }
-        addedStopLocation = false;
-        return;
-    } else if (tagLevel == 11 && tagName == F("lt7:coachClass")) {
-        if (strcmp(value,"First")==0) xStation.service[id].classesAvailable = xStation.service[id].classesAvailable | 1;
-        else if (strcmp(value,"Standard")==0) xStation.service[id].classesAvailable = xStation.service[id].classesAvailable | 2;
-        coaches++;
-        return;
-    } else if (tagLevel == 8 && tagName == F("lt4:length")) {
-        xStation.service[id].trainLength = String(value).toInt();
-        return;
-    } else if (tagLevel == 8 && tagName == F("lt4:operator")) {
-        strncpy(xStation.service[id].opco,value,sizeof(xStation.service[0].opco)-1);
-        xStation.service[id].opco[sizeof(xStation.service[0].opco)-1] = '\0';
-        return;
-    } else if (tagLevel == 10 && tagPath.startsWith(F("lt5:origin/lt4:location/lt4:loc"))) {
-        strncpy(xStation.service[id].origin,value,sizeof(xStation.service[0].origin)-1);
-        xStation.service[id].origin[sizeof(xStation.service[0].origin)-1] = '\0';
-        return;
-    } else if (tagLevel == 8 && tagName == F("lt4:serviceType")) {
-        if (strcmp(value,"train")==0) xStation.service[id].serviceType = TRAIN;
-        else if (strcmp(value,"bus")==0) xStation.service[id].serviceType = BUS;
-        return;
-    } else if (tagLevel == 8 && tagName == F("lt4:std")) {
-        // Starting a new service
-        // If we're filtering on platform numbers, check if we need to keep the previous service (if there was one)
-        if (filterPlatforms && !keepRoute && id>=0) {
-            // We don't want this service, so clear it
-            strcpy(xStation.service[id].sTime,"");
-            strcpy(xStation.service[id].destination,"");
-            strcpy(xStation.service[id].via,"");
-            strcpy(xStation.service[id].origin,"");
-            strcpy(xStation.service[id].etd,"");
-            strcpy(xStation.service[id].platform,"");
-            strcpy(xStation.service[id].opco,"");
-            strcpy(xStation.service[id].calling,"");
-            strcpy(xStation.service[id].serviceMessage,"");
-            xStation.service[id].trainLength=0;
-            xStation.service[id].classesAvailable=0;
-            xStation.service[id].serviceType=0;
-            xStation.service[id].isCancelled=false;
-            xStation.service[id].isDelayed=false;
-            xStation.numServices--;
-            id--;
-        }
-        keepRoute = false;  // reset for next route
-        if (id>=0) {
-            if (xStation.service[id].trainLength == 0) xStation.service[id].trainLength = coaches;
-        }
-        coaches=0;
-        if (id < MAXBOARDSERVICES-1) {
-            id++;
-            xStation.numServices++;
-        }
-        strncpy(xStation.service[id].sTime,value,sizeof(xStation.service[0].sTime));
-        xStation.service[id].sTime[sizeof(xStation.service[0].sTime)-1] = '\0';
-        return;
-    } else if (tagLevel == 8 && tagName == F("lt4:etd")) {
-        strncpy(xStation.service[id].etd,value,sizeof(xStation.service[0].etd));
-        xStation.service[id].etd[sizeof(xStation.service[0].etd)-1] = '\0';
-        return;
-    } else if (tagLevel == 10 && tagPath.startsWith(F("lt5:destination/lt4:location/lt4:lo"))) {
-        strncpy(xStation.service[id].destination,value,sizeof(xStation.service[0].destination)-1);
-        xStation.service[id].destination[sizeof(xStation.service[0].destination)-1] = '\0';
-        return;
-    } else if (tagLevel == 10 && tagPath == F("lt5:destination/lt4:location/lt4:via")) {
-        strncpy(xStation.service[id].via,value,sizeof(xStation.service[0].via)-1);
-        xStation.service[id].via[sizeof(xStation.service[0].via)-1] = '\0';
-        return;
-    } else if (tagLevel == 8 && tagName == F("lt4:delayReason")) {
-        strncpy(xStation.service[id].serviceMessage,value,sizeof(xStation.service[0].serviceMessage)-1);
-        xStation.service[id].serviceMessage[sizeof(xStation.service[0].serviceMessage)-1] = '\0';
-        xStation.service[id].isDelayed = true;
-        return;
-    } else if (tagLevel == 8 && tagName == F("lt4:cancelReason")) {
-        strncpy(xStation.service[id].serviceMessage,value,sizeof(xStation.service[0].serviceMessage)-1);
-        xStation.service[id].serviceMessage[sizeof(xStation.service[0].serviceMessage)-1] = '\0';
-        xStation.service[id].isCancelled = true;
-        return;
-    } else if (tagLevel == 8 && tagName == (F("lt4:platform"))) {
-        strncpy(xStation.service[id].platform,value,sizeof(xStation.service[0].platform)-1);
-        xStation.service[id].platform[sizeof(xStation.service[0].platform)-1] = '\0';
-        if (filterPlatforms && serviceMatchesFilter(platformFilter,xStation.service[id].platform)) keepRoute=true;
-        return;
-    } else if (tagLevel == 6 && tagName == F("lt4:locationName")) {
-        strncpy(xStation.location,value,sizeof(xStation.location)-1);
-        xStation.location[sizeof(xStation.location)-1] = '\0';
-        return;
-    } else if (tagLevel == 6 && tagName == F("lt4:platformAvailable")) {
-        if (strcmp(value,"true")==0) xStation.platformAvailable = true;
-        return;
-    } else if (tagPath.endsWith(F("nrccMessages/lt:message"))) {    // tagLevel 7
-        if (xMessages.numMessages < MAXBOARDMESSAGES) {
-            xMessages.numMessages++;
-            strncpy(xMessages.messages[xMessages.numMessages-1],value,sizeof(xMessages.messages[0])-1);
-            xMessages.messages[xMessages.numMessages-1][sizeof(xMessages.messages[0])-1] = '\0';
-        }
-        return;
     }
 }
 

@@ -11,6 +11,7 @@
 #pragma once
 #include <JsonListener.h>
 #include <JsonStreamingParser.h>
+#include <responseCodes.h>
 
 class weatherClient: public JsonListener {
 
@@ -30,7 +31,7 @@ class weatherClient: public JsonListener {
 
         weatherClient();
 
-        bool updateWeather(String apiKey, String lat, String lon);
+        int updateWeather(String apiKey, String lat, String lon);
 
         virtual void whitespace(char c);
         virtual void startDocument();

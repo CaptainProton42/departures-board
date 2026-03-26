@@ -26,7 +26,7 @@
   .btn {--bs-btn-font-size: 0.875rem;}
   .btn-outline-secondary {font-size: 1rem;}
   .form-control, .form-select {font-size: var(--bs-body-font-size);}
-  .floating-footer {position:fixed;bottom:0;left:0;width:100%;background-color:var(--bs-body-bg);z-index:9999;}
+  .floating-footer {position:fixed;bottom:0;left:0;width:100%;background-color:var(--bs-body-bg);z-index:1030;}
   .floating-footer .footer-inner {width:min(90%, 500px);margin:0 auto;padding:10px;border-top:1px solid var(--bs-border-color);text-align:center;}
   .inline-row {white-space:nowrap;margin-top:-5px;}
   .inline-row label {display:inline-block;margin-right:8px;font-weight:normal;}
@@ -88,6 +88,21 @@
           <label class="form-label" for="searchNameTfL">Underground Station</label>
           <input id="searchNameTfL" type="text" placeholder="Type the underground station name"
             class="form-control typeahead">
+
+          <div id="tflLineFilterBox" class="mt-2" style="display:none">
+            <label class="form-label" for="tubeLineFilter">Filter by Line</label>
+            <select id="tubeLineFilter" class="form-select"></select>
+          </div>
+
+          <div id="tflDirectionFilterBox" class="mt-2" style="display:none">
+            <label class="form-label" for="tubeDirectionFilter">Filter by Direction</label>
+            <select id="tubeDirectionFilter" class="form-select">
+              <option value="">Any direction</option>
+              <option value="inbound">Inbound</option>
+              <option value="outbound">Outbound</option>
+            </select>
+          </div>
+
         </div>
 
         <div class="mb-3" id="busAtcoBox" style="display:none">
@@ -234,13 +249,26 @@
                   </div>
                 </div>
 
+                <hr class="my-0 opacity-10">
+                <div class="py-2">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                      <label class="form-check-label d-block" for="enableWeather">Include current weather at
+                        location</label>
+                      <div class="small text-body-secondary">Requires an OpenWeather Map API key</div>
+                    </div>
+                    <div class="form-check form-switch mb-0">
+                      <input class="form-check-input" type="checkbox" id="enableWeather" role="switch">
+                    </div>
+                  </div>
+                </div>
+
                 <div id="optBuses" style="display:none">
                   <hr class="my-0 opacity-10">
-                  <div class="py-2">
+                  <div class="py-3">
                     <div class="d-flex justify-content-between align-items-center">
                       <div>
                         <label class="form-check-label d-block" for="enableBuses">Include bus replacement services</label>
-                        <div class="small text-body-secondary">Shown as a bus icon for the platform number</div>
                       </div>
                       <div class="form-check form-switch mb-0">
                         <input class="form-check-input" type="checkbox" id="enableBuses" role="switch">
@@ -249,33 +277,62 @@
                   </div>
                 </div>
 
-                <div id="optWeather" style="display:none">
+                <div id="optShowPlatform" style="display:none">
                   <hr class="my-0 opacity-10">
-                  <div class="py-2">
+                  <div class="py-3">
                     <div class="d-flex justify-content-between align-items-center">
                       <div>
-                        <label class="form-check-label d-block" for="enableWeather">Include current weather at
-                          location</label>
-                        <div class="small text-body-secondary">Requires an OpenWeather Map API key.</div>
+                        <label class="form-check-label d-block" for="showPlatform">Show platform numbers (if available)</label>
                       </div>
                       <div class="form-check form-switch mb-0">
-                        <input class="form-check-input" type="checkbox" id="enableWeather" role="switch">
+                        <input class="form-check-input" type="checkbox" id="showPlatform" role="switch">
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <div id="optShowPlatform" style="display:none">
+                <div id="optShowOrdinals" style="display:none">
                   <hr class="my-0 opacity-10">
                   <div class="py-2">
                     <div class="d-flex justify-content-between align-items-center">
                       <div>
-                        <label class="form-check-label d-block" for="showPlatform">Show platform numbers (if
-                          available)</label>
-                        <div class="small text-body-secondary">Shown to the left of the destination</div>
+                        <label class="form-check-label d-block" for="showOrdinals">Show service ordinal numbers</label>
+                        <div class="small text-body-secondary">Displays 2nd, 3rd, 4th etc. next to service time</div>
                       </div>
                       <div class="form-check form-switch mb-0">
-                        <input class="form-check-input" type="checkbox" id="showPlatform" role="switch">
+                        <input class="form-check-input" type="checkbox" id="showOrdinals" role="switch">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="optShowLastSeen" style="display:none">
+                  <hr class="my-0 opacity-10">
+                  <div class="py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <div>
+                        <label class="form-check-label d-block" for="showLastSeen">Show service last seen location</label>
+                        <div class="small text-body-secondary">Adds last reported location to the Calling at list</div>
+                      </div>
+                      <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="showLastSeen" role="switch">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="optShowFullMsgs" style="display:none">
+                  <hr class="my-0 opacity-10">
+                  <div class="py-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <div>
+                        <label class="form-check-label d-inline-block" for="showFullMsgs">Wait for Calling at list to complete</label>
+                        <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip" data-bs-placement="right"
+                          title="Waits for the Calling at service list and other service messages to complete scrolling before changing the primary service on the board."
+                          style="cursor:pointer;"></i>
+                      </div>
+                      <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="showFullMsgs" role="switch">
                       </div>
                     </div>
                   </div>
@@ -320,7 +377,7 @@
                   </div>
                 </div>
 
-                <div id="sleepTimeSelectors" style="padding-bottom:10px;display:none">
+                <div id="sleepTimeSelectors" style="display:none">
                   <div style="display:flex;gap:10px;">
                     <div style="flex:1;">
                       <label class="form-label" for="sleepStart">Sleep start hour</label>
@@ -331,6 +388,16 @@
                       <label class="form-label" for="sleepEnd">Sleep end hour</label>
                       <select id="sleepEnd" class="form-select">
                       </select>
+                    </div>
+                  </div>
+                  <div class="py-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <div>
+                        <label class="form-check-label d-block" for="darkSleep">Switch off display during sleep mode</label>
+                      </div>
+                      <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="darkSleep" role="switch">
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -443,8 +510,8 @@
                   <div class="py-2">
                     <div class="d-flex justify-content-between align-items-center">
                       <div>
-                        <label class="form-check-label d-block" for="enableFastRefresh">Increase API refresh rate</label>
-                        <div class="small text-body-secondary">Rail mode only. Refreshes every 45s</div>
+                        <label class="form-check-label d-block" for="enableFastRefresh">Increase Rail API refresh rate</label>
+                        <div class="small text-body-secondary">Increases from every 90 secs to 45 secs</div>
                       </div>
                       <div class="form-check form-switch mb-0">
                         <input class="form-check-input" type="checkbox" id="enableFastRefresh" role="switch">
@@ -453,18 +520,44 @@
                   </div>
                 </div>
 
+                <hr class="my-0 opacity-10">
+                <div class="py-2">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                      <label class="form-check-label d-block" for="optCommsIcon">Show activity indicator during updates</label>
+                      <div class="small text-body-secondary">Displays when communicating with data providers</div>
+                    </div>
+                    <div class="form-check form-switch mb-0">
+                      <input class="form-check-input" type="checkbox" id="optCommsIcon" role="switch">
+                    </div>
+                  </div>
+                </div>
+
                 <div id="optRssFeed" style="display:none;">
-                  <hr class="my-2 opacity-10">
+                  <hr class="mt-0 mb-2 opacity-10">
                   <label class="form-label" for="rssFeedList">Display RSS news headlines feed from:</label>
                   <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip" data-bs-placement="right"
                     title="The top 5 news headlines from the selected feed will be shown after any other service messages."
                     style="cursor:pointer;"></i>
                   <select id="rssFeedList" class="form-select"></select>
-                  <div class="small text-body-secondary">Tap <a href="/editrss.htm">here</a> to open the RSS feeds editor</div>
+                  <div class="small text-body-secondary mb-2">Tap <a href="/editrss.htm">here</a> to open the RSS feeds editor</div>
+
+                  <hr class="my-0 opacity-10">
+                  <div class="py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <div>
+                        <label class="form-check-label d-block" for="rssPriority">Prioritise RSS headlines feed</label>
+                        <div class="small text-body-secondary">Displays headlines before service messages</div>
+                      </div>
+                      <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="rssPriority" role="switch">
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div id="optNrTimeOffset" class="mb-3" style="display:none;">
-                  <hr class="my-3 opacity-10">
+                  <hr class="mt-0 mb-3 opacity-10">
                   <div class="d-flex align-items-center">
                     <label class="form-label mb-0" for="nrTimeOffset">Offset departures by:</label>
                     <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip" data-bs-placement="right"
@@ -525,6 +618,10 @@
       nrTimeOffset: 0,
       tubeName: "",
       tubeId: "",
+      tubeLineId: "all",
+      tubeDirection: "",
+      tubeLat: 0,
+      tubeLon: 0,
       busName: "",
       busId: "",
       busLat: 0,
@@ -562,6 +659,10 @@
       form: document.getElementById("formsettings"),
       searchName: document.getElementById("searchName"),
       searchNameTfL: document.getElementById("searchNameTfL"),
+      tubeLineFilterBox: document.getElementById("tflLineFilterBox"),
+      tubeLineFilter: document.getElementById("tubeLineFilter"),
+      tubeDirectionFilterBox: document.getElementById("tflDirectionFilterBox"),
+      tubeDirectionFilter: document.getElementById("tubeDirectionFilter"),
       callingStation: document.getElementById("callingStation"),
       platformFilter: document.getElementById("platformFilter"),
       altCallingStation: document.getElementById("altCallingStation"),
@@ -584,7 +685,6 @@
       busFilter: document.getElementById("busFilter"),
       clearHistoryButton: document.getElementById("clearHistory"),
       busAtcoHistoryList: document.getElementById("busAtcoHistoryList"),
-      optFlip: document.getElementById("optFlip"),
       optTouch: document.getElementById("optTouch"),
       forceWakeTime: document.getElementById("forceWakeTime"),
       optTZ: document.getElementById("optTZ"),
@@ -595,11 +695,42 @@
       rssFeedList: document.getElementById("rssFeedList")
     };
 
-    const busFilterError = "Please enter a valid list of bus services to filter on, or leave blank for all services.";
-    const platformFilterError = "Please enter a valid list of platforms to filter on, or leave blank for all services.";
-    const tzError = "Please enter a valid POSIX format timezone string or uncheck the \"Custom timezone\" option to use UK time.";
-    const hostnameError = "Please enter a valid hostname or uncheck the \"Custom hostname\" option to use the default \"DeparturesBoard\".";
-    const MAX_BUS_ATCOS = 10;
+    document.getElementById('formsettings').addEventListener('keydown', function(e) { if (e.key === 'Enter') e.preventDefault(); });
+
+    const busFilterError="Please enter a valid list of bus services to filter on, or leave blank for all services.";
+    const platformFilterError="Please enter a valid list of platforms to filter on, or leave blank for all services.";
+    const tzError="Please enter a valid POSIX format timezone string or uncheck the \"Custom timezone\" option to use UK time.";
+    const hostnameError="Please enter a valid hostname or uncheck the \"Custom hostname\" option to use the default \"DeparturesBoard\".";
+    const MAX_BUS_ATCOS=10;
+    const sysErr="System Error";
+    const sysName="Departures Board"
+
+    const lineDirectionMap = {
+      "bakerloo": {inbound:"Southbound",outbound:"Northbound"},
+      "central": {inbound:"Westbound",outbound:"Eastbound"},
+      "circle": {inbound:"Anti-Clockwise",outbound:"Clockwise"},
+      "district": {inbound:"Westbound",outbound:"Eastbound"},
+      "hammersmith-city": {inbound:"Westbound",outbound:"Eastbound"},
+      "jubilee": {inbound:"Northbound",outbound:"Southbound"},
+      "metropolitan": {inbound:"Northbound",outbound:"Southbound"},
+      "northern": {inbound:"Southbound",outbound:"Northbound"},
+      "piccadilly": {inbound:"Westbound",outbound:"Eastbound"},
+      "victoria": {inbound:"Southbound",outbound:"Northbound"},
+      "waterloo-city": {inbound:"Westbound",outbound:"Eastbound"}
+    };
+
+    function updateDirectionLabels(lineId) {
+      const map = lineDirectionMap[lineId];
+      const optInbound = document.querySelector('#tubeDirectionFilter option[value="inbound"]');
+      const optOutbound = document.querySelector('#tubeDirectionFilter option[value="outbound"]');
+
+      if (optInbound) {
+        optInbound.textContent = map ? map.inbound : "Inbound";
+      }
+      if (optOutbound) {
+        optOutbound.textContent = map ? map.outbound : "Outbound";
+      }
+    }
 
     function populateHoursSelect(selectId) {
       const select = document.getElementById(selectId);
@@ -700,11 +831,11 @@
         });
 
         if (!response.ok) {
-          alert("Failed to save ATCO history to board.");
+          await bsAlert("Failed to save ATCO history to board.",sysErr);
           return;
         }
       } catch (err) {
-        alert("Failed to upload ATCO history: " + err.message);
+        await bsAlert("Failed to upload ATCO history: " + err.message,sysErr);
       }
       renderAtcoHistory();
     }
@@ -763,7 +894,7 @@
       renderAtcoHistory();
     }
 
-    function validateCSVFilter(input, errorMessage) {
+    async function validateCSVFilter(input, errorMessage) {
       const trimmed = input.trim();
 
       if (!trimmed.length) {
@@ -774,7 +905,7 @@
       }
 
       if (trimmed.includes('"')) {
-        alert('Double quotes (") are not allowed in the platform/bus service filters.');
+        await bsAlert('Double quotes (") are not allowed in the platform/bus service filters.');
         return {
           ok: false
         };
@@ -782,7 +913,7 @@
 
       const csvRegex = /^[^,\s]+(\s*,\s*[^,\s]+)*$/;
       if (!csvRegex.test(trimmed)) {
-        alert(errorMessage);
+        await bsAlert(errorMessage);
         return {
           ok: false
         };
@@ -794,9 +925,9 @@
       };
     }
 
-    function validatePlatformFilter() {
+    async function validatePlatformFilter() {
       const input = elements.platformFilter.value;
-      const result = validateCSVFilter(input, platformFilterError);
+      const result = await validateCSVFilter(input, platformFilterError);
       if (!result.ok) appState.platformFilterOK = false;
       else {
         appState.platformFilterOK = true;
@@ -804,9 +935,9 @@
       }
     }
 
-    function validateAltPlatformFilter() {
+    async function validateAltPlatformFilter() {
       const input = elements.altPlatformFilter.value;
-      const result = validateCSVFilter(input, platformFilterError);
+      const result = await validateCSVFilter(input, platformFilterError);
       if (!result.ok) appState.altPlatformFilterOK = false;
       else {
         appState.altPlatformFilterOK = true;
@@ -814,9 +945,9 @@
       }
     }
 
-    function validateBusFilter() {
+    async function validateBusFilter() {
       const input = elements.busFilter.value;
-      const result = validateCSVFilter(input, busFilterError);
+      const result = await validateCSVFilter(input, busFilterError);
       if (!result.ok) appState.busFilterOK = false;
       else {
         appState.busFilterOK = true;
@@ -824,24 +955,24 @@
       }
     }
 
-    function validateTZ() {
+    async function validateTZ() {
       const regex = /^([A-Za-z]{3,})([+-]?(?:[0-9]|1[0-4])(?::[0-5][0-9])?(?::[0-5][0-9])?)?([A-Za-z]{3,})?(?:,M(0?[1-9]|1[0-2])\.(?:[1-4]|5)\.[0-6](?:\/(?:[0-9]|1[0-9]|2[0-4]))?,M(0?[1-9]|1[0-2])\.(?:[1-4]|5)\.[0-6](?:\/(?:[0-9]|1[0-9]|2[0-4]))?)?$/;
       const value = elements.customTZ.value.trim();
       appState.tzOK = true;
       if (!value.length) return;
       if (regex.test(value)) return;
       appState.tzOK = false;
-      alert(tzError);
+      await bsAlert(tzError);
     }
 
-    function validateHostname() {
+    async function validateHostname() {
       const regex = /^(?!-)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
       const value = elements.customHost.value.trim();
       appState.hostnameOK = true;
       if (!value.length) return;
       if (regex.test(value)) return;
       appState.hostnameOK = false;
-      alert(hostnameError);
+      await bsAlert(hostnameError);
     }
 
     const substringMatcher = () => {
@@ -955,12 +1086,12 @@
       }
     });
 
-    elements.form.addEventListener("submit", function (e) {
+    elements.form.addEventListener("submit", async function (e) {
       e.preventDefault();
-      if (!appState.busFilterOK) alert(busFilterError);
-      else if (!appState.platformFilterOK || !appState.altPlatformFilterOK) alert(platformFilterError);
-      else if (!appState.tzOK) alert(tzError);
-      else if (!appState.hostnameOK) alert(hostnameError);
+      if (!appState.busFilterOK) await bsAlert(busFilterError);
+      else if (!appState.platformFilterOK || !appState.altPlatformFilterOK) await bsAlert(platformFilterError);
+      else if (!appState.tzOK) await bsAlert(tzError);
+      else if (!appState.hostnameOK) await bsAlert(hostnameError);
       else handleSave();
     });
 
@@ -973,6 +1104,18 @@
     elements.altCallingStation.addEventListener("blur", () => setTimeout(handleAltCallingStationLostFocus, 500));
     elements.searchNameTfL.addEventListener("focus", () => elements.searchNameTfL.select());
     elements.searchNameTfL.addEventListener("blur", () => setTimeout(handleTfLStationLostFocus, 500));
+    elements.tubeLineFilter.addEventListener("change", (e) => {
+      appState.tubeLineId = e.target.value;
+      if (appState.tubeLineId === "all") {
+        show("tflDirectionFilterBox", false);
+        appState.tubeDirection = "";
+        elements.tubeDirectionFilter.value = "";
+      } else {
+        updateDirectionLabels(appState.tubeLineId);
+        show("tflDirectionFilterBox", true);
+      }
+    });
+    elements.tubeDirectionFilter.addEventListener("change", (e) => { appState.tubeDirection = e.target.value; });
     elements.enableSleep.addEventListener("change", toggleSleepSelectors);
     elements.brightness.addEventListener("change", handleBrightnessChange);
     elements.clearButton.addEventListener("click", handleClearFilter);
@@ -1011,11 +1154,11 @@
     async function fetchConfig() {
       try {
         const response = await fetch('/config.json');
-        if (!response.ok) throw new Error("Failed to fetch config.");
+        if (!response.ok) throw new Error("Failed to fetch config.json from file system.");
         appState.jsonSettings = await response.json();
         loadSettings();
       } catch (err) {
-        alert(`Error loading config: ${err.message}`);
+        await bsAlert(`Error loading config: ${err.message}`,sysErr);
       }
     }
 
@@ -1098,7 +1241,7 @@
         elements.busLongName.innerHTML = "";
         appState.busIdOK = false;
         toggleBusFilterBox();
-        alert("The Bus Stop ATCO code you entered could not be found.");
+        await bsAlert("The Bus Stop ATCO code you entered could not be found.");
       }
     }
 
@@ -1131,7 +1274,9 @@
       show("nrAltStation", rail);
       show("optBuses", rail);
       show("optShowPlatform", rail);
-      show("optWeather", rail || bus);
+      show("optShowOrdinals",rail);
+      show("optShowLastSeen", rail);
+      show("optShowFullMsgs", rail);
       show("optFastRefresh", rail);
       show("optNoScroll", rail || tube);
       show("optRssFeed", rail || tube);
@@ -1192,8 +1337,8 @@
       const s = appState.jsonSettings;
       appState.stationName = s.station || "";
       appState.stationCRS = s.crs || "";
-      appState.stationLatitude = s.lat || 0;
-      appState.stationLongitude = s.lon || 0;
+      appState.stationLatitude = s.lat ?? 0;
+      appState.stationLongitude = s.lon ?? 0;
 
       appState.callingStation = s.callingStation || "";
       appState.callingCrs = s.callingCrs || "";
@@ -1204,11 +1349,15 @@
 
       appState.tubeName = s.tubeName || "";
       appState.tubeId = s.tubeId || "";
+      appState.tubeLineId = s.lineid || "all";
+      appState.tubeDirection = s.direction || "";
+      appState.tubeLat = s.tubeLat ?? 0;
+      appState.tubeLon = s.tubeLon ?? 0;
 
       appState.busId = s.busId || "";
       appState.busName = s.busName || "";
-      appState.busLat = s.busLat || 0;
-      appState.busLon = s.busLon || 0;
+      appState.busLat = s.busLat ?? 0;
+      appState.busLon = s.busLon ?? 0;
       appState.busIdOK = appState.busId.length > 0 && appState.busName.length > 0;
       appState.busFilter = s.busFilter || "";
       appState.boardMode = s.mode ?? (s.tube != undefined ? (s.tube ? 1 : 0) : 0);
@@ -1222,18 +1371,22 @@
       elements.altPlatformFilter.value = appState.altPlatformFilter;
       show("nrAltCallingBox", appState.altCallingCrs.length);
       elements.searchNameTfL.value = appState.tubeName;
+      if (appState.tubeId) {
+        fetchTubeLines(appState.tubeId, appState.tubeLineId);
+      }
+      elements.tubeDirectionFilter.value = appState.tubeDirection;
       elements.busAtco.value = appState.busId;
       elements.busFilter.value = appState.busFilter;
-      elements.brightness.value = s.brightness || 50;
+      elements.brightness.value = s.brightness ?? 50;
       const pct = (elements.brightness.value / 255) * 100;
       elements.brightness.title = Math.round(pct) + "%";
 
       appState.altStation = s.altStation || "";
       appState.altCrs = s.altCrs || "";
-      appState.altLatitude = s.altLat || 0;
-      appState.altLongitude = s.altLon || 0;
-      appState.altStarts = s.altStarts || 12;
-      appState.altEnds = s.altEnds || 23;
+      appState.altLatitude = s.altLat ?? 0;
+      appState.altLongitude = s.altLon ?? 0;
+      appState.altStarts = s.altStarts ?? 12;
+      appState.altEnds = s.altEnds ?? 23;
       elements.altStation.value = appState.altStation;
 
       if (appState.busName.length) elements.busLongName.innerHTML = "Location: <b>" + appState.busName + "</b>";
@@ -1247,24 +1400,30 @@
       show("customHostbox", elements.customHost.value.length);
 
       setCheckbox("enableSleep", s.sleep);
+      setCheckbox("darkSleep", s.darkSleep);
       setCheckbox("showDate", s.showDate);
       setCheckbox("enableBuses", s.showBus);
       setCheckbox("enableFirmware", s.update);
       setCheckbox("enableFirmwareDaily", s.updateDaily);
       setCheckbox("enableWeather", s.weather);
-      setCheckbox("showPlatform", !(s.hidePlatform || false));
+      setCheckbox("showPlatform", !(s.hidePlatform ?? false));
+      setCheckbox("showOrdinals", !(s.hideOrdinals ?? false));
+      setCheckbox("showLastSeen", s.showLastSeen);
+      setCheckbox("showFullMsgs", (s.showFullMsgs ?? true));
       setCheckbox("enableFastRefresh", s.fastRefresh);
       setCheckbox("noScrolling", s.noScroll);
       setCheckbox("optFlip", s.flip);
       setCheckbox("optTouch", s.touch);
+      setCheckbox("optCommsIcon", s.dataIcon);
+      setCheckbox("rssPriority", s.rssPriority);
       show("optStayAwake",s.touch);
 
       elements.sleepStart.value = s.sleepStarts;
       elements.sleepEnd.value = s.sleepEnds;
       elements.altStart.value = appState.altStarts;
       elements.altEnd.value = appState.altEnds;
-      elements.nrTimeOffset.value = s.nrTimeOffset || 0;
-      elements.forceWakeTime.value = s.forceWakeTime || 300;
+      elements.nrTimeOffset.value = s.nrTimeOffset ?? 0;
+      elements.forceWakeTime.value = s.forceWakeTime ?? 300;
       const rssUrl = s.rssUrl || "";
       const rssSelect = document.getElementById('rssFeedList');
       const optionExists = rssSelect.querySelector(`option[value="${rssUrl}"]`);
@@ -1313,13 +1472,68 @@
       toggleAltSelectors();
     }
 
+    async function fetchTubeLines(stopPointId, selectedLineId = "all") {
+      try {
+        const response = await fetch(`https://api.tfl.gov.uk/StopPoint/${stopPointId}?app_key=${appState.appKey}`);
+        if (!response.ok) throw new Error("Failed to fetch stop point data");
+        const data = await response.json();
+
+        elements.tubeLineFilter.innerHTML = "";
+
+        const defaultOption = document.createElement("option");
+        defaultOption.value = "all";
+        defaultOption.textContent = "All lines";
+        elements.tubeLineFilter.appendChild(defaultOption);
+
+        if (data.lines && data.lines.length > 0) {
+          const allowedModes = ["tube","dlr"];
+          let validLineIds = [];
+
+          if (data.lineModeGroups) {
+            data.lineModeGroups.forEach(group => {
+              if (allowedModes.includes(group.modeName)) {
+                validLineIds = validLineIds.concat(group.lineIdentifier);
+              }
+            });
+          }
+
+          data.lines.forEach(line => {
+            if (validLineIds.includes(line.id)) {
+              const option = document.createElement("option");
+              option.value = line.id;
+              option.textContent = line.name;
+              elements.tubeLineFilter.appendChild(option);
+            }
+          });
+        }
+
+        elements.tubeLineFilter.value = selectedLineId;
+        show("tflLineFilterBox", true);
+
+        if (selectedLineId === "all") {
+          show("tflDirectionFilterBox", false);
+        } else {
+          updateDirectionLabels(selectedLineId);
+          show("tflDirectionFilterBox", true);
+        }
+      } catch (err) {
+        console.error("Error fetching tube lines:", err);
+        show("tflLineFilterBox", false);
+        show("tflDirectionFilterBox", false);
+      }
+    }
+
     function handleTfLStationSelected(item) {
       appState.stationSelectedTfL = true;
       appState.tubeName = item.name;
       appState.tubeId = item.id;
-      appState.stationLatitude = item.lat;
-      appState.stationLongitude = item.lon;
+      appState.tubeLat = item.lat;
+      appState.tubeLon = item.lon;
+      appState.tubeLineId = "all";
+      appState.tubeDirection = "";
+      elements.tubeDirectionFilter.value = "";
       elements.saveButton.disabled = false;
+      fetchTubeLines(item.id, "all");
     }
 
     function handleStationLostFocus() {
@@ -1407,19 +1621,28 @@
       s.platformFilter = appState.platformFilter;
       s.tubeId = appState.tubeId;
       s.tubeName = appState.tubeName;
+      s.lineid = appState.tubeLineId;
+      s.direction = appState.tubeDirection;
+      s.tubeLat = appState.tubeLat;
+      s.tubeLon = appState.tubeLon;
       s.mode = appState.boardMode;
-      s.brightness = elements.brightness.value;
+      s.brightness = parseInt(elements.brightness.value);
       s.sleep = isChecked("enableSleep");
+      s.darkSleep = isChecked("darkSleep");
       s.showDate = isChecked("showDate");
       s.showBus = isChecked("enableBuses");
       s.update = isChecked("enableFirmware");
       s.updateDaily = isChecked("enableFirmwareDaily");
       s.weather = isChecked("enableWeather");
       s.hidePlatform = !isChecked("showPlatform");
+      s.hideOrdinals = !isChecked("showOrdinals");
+      s.showLastSeen = isChecked("showLastSeen");
+      s.showFullMsgs = isChecked("showFullMsgs");
       s.fastRefresh = isChecked("enableFastRefresh");
       s.noScroll = isChecked("noScrolling");
       s.flip = isChecked("optFlip");
       s.touch = isChecked("optTouch");
+      s.dataIcon = isChecked("optCommsIcon");
       s.sleepStarts = parseInt(elements.sleepStart.value);
       s.sleepEnds = parseInt(elements.sleepEnd.value);
       s.altCrs = appState.altCrs;
@@ -1434,6 +1657,7 @@
       s.nrTimeOffset = parseInt(elements.nrTimeOffset.value);
       s.forceWakeTime = parseInt(elements.forceWakeTime.value);
       s.rssUrl = elements.rssFeedList.value;
+      s.rssPriority = isChecked("rssPriority");
       var selectedText = document.querySelector("#rssFeedList option:checked").textContent;
       s.rssName = selectedText;
       if (appState.busIdOK) {
@@ -1453,10 +1677,10 @@
         });
 
         const text = await response.text();
-        alert(text);
+        await bsAlert(text,sysName,4000);
 
       } catch (err) {
-        alert(`Failed to save settings: ${err.message}`);
+        await bsAlert(`Failed to save settings: ${err.message}`,sysErr);
       }
     }
 
@@ -1469,6 +1693,12 @@
       else document.getElementById(id).style.display = "none";
     }
 
+    function formatChangelog(text) {
+      const truncatedText = text.split('---')[0];
+      const formattedText = truncatedText.replace(/\n-/g, '\n•');
+      return formattedText;
+    }
+
     async function handleCheckUpdates() {
       try {
         const response = await fetch("https://api.github.com/repos/gadec-uk/departures-board/releases/latest");
@@ -1477,10 +1707,10 @@
         const data = await response.json();
         const latestTag = data.tag_name;
         const currentTag = appState.firmwareVersion;
-        const latestDesc = data.name;
+        const latestRelNotes = formatChangelog(data.body);
 
         if (!latestTag || !currentTag) {
-          alert("Could not compare firmware versions.");
+          await bsAlert("Could not compare firmware versions.",sysErr);
           return;
         }
 
@@ -1505,43 +1735,132 @@
         const current = parseVersion(currentTag);
 
         if (!latest || !current) {
-          alert("Firmware version format invalid.");
+          await bsAlert("Firmware version format invalid.",sysErr);
           return;
         }
 
         if (isNewer(latest.B, current.B) || isNewer(latest.W, current.W)) {
-          if (confirm(`An update to version ${latestTag} is available.\n\nBrief description: "${latestDesc}".\n\nClick \'OK\' to install the update now or \'Cancel\' to abort.`)) {
+          if (await bsConfirm(`An update to version ${latestTag} is available.\n\nClick <b>OK</b> to install the update now or <b>Cancel</b> to abort.\n\n<b>Release Notes:</b>\n${latestRelNotes}\n\n`)) {
             fetch('/ota', { method: 'GET' })
               .then(res => res.text())
-              .then(msg => alert(msg))
-              .catch(err => alert('Error initiating update: ' + err.message));
+              .then(msg => bsAlert(msg))
+              .catch(err => bsAlert('Error initiating update: '+err.message,sysErr));
           }
         } else {
-          alert("No updates available. You are using the latest version.");
+          await bsAlert(`No updates available. You are using the latest version.\n\n<b>Release Notes:</b>\n${latestRelNotes}`);
         }
-
       } catch (err) {
         console.error(err);
-        alert("Error checking for updates: " + err.message);
+        await bsAlert("Error checking for updates: "+err.message,sysErr);
       }
     }
 
-    function handleClearWifi() {
-      if (confirm('Are you sure you want to clear WiFi settings?')) {
+    async function handleClearWifi() {
+      if (await bsConfirm('Are you sure you want to clear WiFi settings?',sysName,10000)) {
         fetch('/erasewifi', { method: 'GET' })
           .then(res => res.text())
-          .then(msg => alert(msg))
-          .catch(err => alert('Error clearing WiFi: ' + err.message));
+          .then(msg => bsAlert(msg,sysName))
+          .catch(err => bsAlert('Error clearing WiFi: '+err.message,sysErr));
       }
     }
 
-    function handleRestartSystem() {
-      if (confirm('Are you sure you want to restart the system?')) {
-        fetch('/reboot', { method: 'GET' })
+    async function handleRestartSystem() {
+      if (await bsConfirm('Are you sure you want to restart the system?',sysName,10000)) {
+        fetch('/reboot', { method: 'GET'})
           .then(res => res.text())
-          .then(msg => alert(msg))
-          .catch(err => alert('Error restarting system: ' + err.message));
+          .then(msg => bsAlert(msg,sysName,12000))
+          .catch(err => bsAlert('Error restarting system: '+err.message,sysErr));
       }
+    }
+
+    // Utility function to generate dynamic Bootstrap 5 modals
+    function showBsModal(options) {
+      const {
+        title = 'Message',
+        body = '',
+        type = 'alert',
+        timeout = 0,
+        onConfirm = () => {},
+        onCancel = () => {}
+      } = options;
+
+      // Create unique ID for the modal
+      const modalId = 'bsModal-' + Date.now();
+
+      const modalHtml = `
+      <div class="modal fade" id="${modalId}" tabindex="-1" aria-labelledby="${modalId}Label" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="${modalId}Label">${title}</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="white-space: pre-wrap;">${body}</div>
+            <div class="modal-footer">
+              ${type === 'confirm' ? `<button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="${modalId}-btn-cancel">Cancel</button>` : ''}
+              <button type="button" class="btn btn-primary" id="${modalId}-btn-ok">${type === 'confirm' ? 'OK' : 'Close'}</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
+      document.body.insertAdjacentHTML('beforeend', modalHtml);
+      const modalElement = document.getElementById(modalId);
+      const bsModal = new bootstrap.Modal(modalElement);
+      let isConfirmed = false;
+
+      document.getElementById(`${modalId}-btn-ok`).addEventListener('click', () => {
+        isConfirmed = true;
+        bsModal.hide();
+        onConfirm();
+      });
+
+      if (type === 'confirm') {
+        document.getElementById(`${modalId}-btn-cancel`).addEventListener('click', () => {
+          bsModal.hide();
+          onCancel();
+        });
+      }
+
+      modalElement.addEventListener('hidden.bs.modal', () => {
+        if (!isConfirmed && type === 'confirm') {
+          onCancel();
+        } else if (!isConfirmed && type === 'alert') {
+          onConfirm();
+        }
+        modalElement.remove();
+      });
+
+      bsModal.show();
+
+      if (timeout > 0) {
+        setTimeout(() => {
+          if (document.getElementById(modalId)) {
+            bsModal.hide();
+          }
+        }, timeout);
+      }
+    }
+
+    // Wrapper for an Alert Modal
+    function bsAlert(message,title='Departures Board',timeout=0) {
+      return new Promise(resolve => {
+        showBsModal({title,body:message,type:'alert',timeout,onConfirm:resolve,onCancel:resolve});
+      });
+    }
+
+    // Wrapper for a Confirm Modal
+    function bsConfirm(message,title=sysName,timeout=0) {
+      return new Promise((resolve) => {
+        showBsModal({
+          title,
+          body: message,
+          type: 'confirm',
+          timeout,
+          onConfirm: () => resolve(true),
+          onCancel: () => resolve(false)
+        });
+      });
     }
   </script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>

@@ -9,21 +9,23 @@ A model railway (00 gauge) version of this project is also available [here](http
 * **NEW** Support for touch sensor to switch modes / stations / wake from screensaver
 * Smooth animation matching the real departures and arrivals boards
 * Displays up to the next 9 departures with scheduled time, platform number, destination, calling stations and expected departure time
+* Optionally display the last reported location of a service
 * Optionally only show services calling at a selected railway station
 * Optionally display an alternate railway station between specific hours of the day
 * Displays Network Rail service messages
 * Train information (operator, class, number of coaches etc.)
 * Displays up to the next 9 arrivals with time to station (London Underground mode)
 * TfL station and network service messages (London Underground mode)
+* Optionally filter by tube line and direction
 * In Bus mode, displays up to the next 9 departures with service number, destination, vehicle registration and schedule/expected time
 * Optionally display RSS headline feeds with UK news, sports and rail news
-* **NEW** RSS Feed Editor to add custom headline feeds
+* RSS Feed Editor to add custom headline feeds
 * Fully-featured browser based configuration screens - choose any station on the UK network / London Tube & DLR network / UK Bus Stops
 * Automatic firmware updates (optional)
 * Displays the weather at the selected location (optional)
 * STL files provided for custom 3D printed case
 
-![Image](https://github.com/user-attachments/assets/6ce61d63-7d64-43c7-b7f4-8f0893a5d708)
+![Image](https://github.com/user-attachments/assets/723f58f3-bd6f-44cf-a6cc-9dcaf394bd19)
 
 ## Quick Start
 
@@ -104,7 +106,7 @@ Once the ESP32 has established an Internet connection, the next step is to enter
 ### Web GUI
 
 At start-up, the ESP32's IP address is displayed. To change the station or to configure other miscellaneous settings, open the web page at that address. The settings available are:
-- **Board Mode** - switch between National Rail Departures, London Underground Arrivals or UK Bus Stops modes (**firmware v1.8 or above**)
+- **Board Mode** - switch between National Rail Departures, London Underground Arrivals or UK Bus Stops modes.
 - **Station** - start typing a few characters of a station name and select from the drop-down station picker displayed (National Rail mode).
 - **Only show services calling at** - filter services based on *calling at* location (National Rail mode - if you want to see the next trains *to* a particular station).
 - **Only show these platforms** - filter services based on the platform they depart from. Note: there are many services for which platform number is not supplied, these would also be filtered out.
@@ -112,31 +114,38 @@ At start-up, the ESP32's IP address is displayed. To change the station or to co
 - **Only show services calling at (alternate active)** - as above, but applies when the alternate station is active.
 - **Only show these platforms (alternate active)** - as above, but applies when the alternate station is active.
 - **Underground Station** - start typing a few characters of an Underground or DLR station name and select from the drop-down station picker displayed (London Underground mode).
+- **Filter by Line** - Select the desired underground line or all lines for all arrivals.
+- **Filter by Direction** - Select the desired direction or any direction for all arrivals.
 - **Bus Stop ATCO code** - Type the ATCO number of the bus stop you want to monitor (see [below](#bus-stop-atco-codes) for details).
 - **Only show these Bus services** - filter buses by service numbers (enter a list of the service numbers, comma separated).
 - **Recently verfied ATCO codes** - quickly select from recently used bus stop ATCO codes.
 - **Brightness** - adjusts the brightness of the OLED screen.
-- **Show the date on screen** - displays the date in the upper-right corner (useful if you're also using this as a desk clock!)
-- **Include bus replacement services** - optionally include bus replacement services (National Rail mode - shown with a small bus icon in place of platform number).
-- **Include current weather at station location** - this option requires a valid OpenWeather Map API key (National Rail/Bus mode).
+- **Show the date on screen** - displays the date in the upper-right corner (useful if you're also using this as a desk clock).
+- **Include current weather at station location** - this option requires a valid OpenWeather Map API key.
+- **Include bus replacement services** - optionally include bus replacement services (National Rail mode).
 - **Show platform numbers if available** - deselecting this option will hide platform numbers (National Rail).
+- **Show service ordinal numbers** - Displays "2nd","3rd","4th" etc. next to the service times (National Rail).
+- **Show service last seen location** - Adds the last reported location and time of a service to the Calling at list (National Rail).
+- **Wait for Calling at list to complete** - Waits for the Calling at list or current message/RSS feed to finish scrolling before changing the primary service.
 - **Enable automatic firmware updates at startup** - automatically checks for AND installs the latest firmware from this repository when the system starts up.
 - **Enable daily check for firmware updates** - when enabled, the system will check for and install any updates just after midnight if the board is powered on.
 - **Enable overnight sleep mode (screensaver)** - if you're running the board 24/7, you can help prevent screen burn-in by enabling this option overnight.
+- **Switch off display during sleep mode** - turns off the display completely during sleep mode, otherwise displays the date & time.
 - ***Enable touch sensor** - A short tap switches between configured modes (rail/tube/bus). A long tap switches between primary and alternate railway stations (if configured). Obviously, do not enable this option if you have not installed a TTP223 touch sensor.
 - ***Wake from sleep by touch for** - if the board is in screensaver mode and the touch sensor is enabled, a tap will wake the board and it will remain awake for the selected number of minutes (the countdown timer resets on each tap).
 - ***Flip the display 180°** - Rotates the display (the case design provides two different viewing angles depending on orientation).
 - ***Set custom hostname for this board** - change the hostname from the default "DeparturesBoard", useful if you are running multiple boards.
 - ***Custom (non-UK) time zone (only for clock)** - if you're not based in the UK you can set the clock to display in your local time zone (see [below](#custom-time-zones) for details).
 - ***Suppress calling at / information messages** - removes all horizontally scrolling text (much lower functionality but less distracting).
-- ***Increase API refresh rate** - Reduces the interval between data refreshes (National Rail mode). Uses more data and is not usually required.
-- ***Display RSS news headlines feed** - Displays the top headlines from the selected feed after any other service messages (Rail/Tube mode).
+- ***Increase API refresh rate** - Reduces the interval between data refreshes (National Rail mode).
+- ***Display RSS news headlines feed** - Displays the top headlines from the selected feed (Rail/Tube mode).
+- ***Prioritise RSS headlines feed** - Displays headlines before other network service messages.
 - ***Display departures offset by** - Displays future (or past) services offset by the selected time. This does not affect the clock display (Rail mode).
 
 Items marked * are on the *Advanced Options* tab.
 
 A drop-down menu (top-right) adds the following options:
-- **Check for Updates** - manually checks for and installs any updates to the firmware.
+- **Check for Updates** - manually checks for and optionally installs any updates to the firmware. Also displays the release notes of the latest firmware.
 - **Edit API Keys** - view/edit your National Rail, OpenWeather Map and Transport for London API keys.
 - **Edit RSS Feeds** - loads the RSS Feeds Editor where you can add/edit/delete custom headline feeds.
 - **Clear WiFi Settings** - deletes the stored WiFi credentials and restarts in WiFiManager mode (useful to change WiFi network).

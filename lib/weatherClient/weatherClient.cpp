@@ -15,7 +15,7 @@
 
 weatherClient::weatherClient() {}
 
-bool weatherClient::updateWeather(String apiKey, String lat, String lon) {
+int weatherClient::updateWeather(String apiKey, String lat, String lon) {
 
     unsigned long perfTimer = millis();
     lastErrorMsg = "";
@@ -30,7 +30,7 @@ bool weatherClient::updateWeather(String apiKey, String lat, String lon) {
     }
     if (retryCounter>=15) {
         lastErrorMsg += F("Connection timeout");
-        return false;
+        return UPD_NO_RESPONSE;
     }
 
     String request = "GET /data/2.5/weather?units=metric&lang=en&lat=" + lat + F("&lon=") + lon + F("&appid=") + apiKey + F(" HTTP/1.0\r\nHost: ") + String(apiHost) + F("\r\nConnection: close\r\n\r\n");
@@ -44,7 +44,7 @@ bool weatherClient::updateWeather(String apiKey, String lat, String lon) {
         // no response within 8 seconds so exit
         httpClient.stop();
         lastErrorMsg += F("Response timeout (GET)");
-        return false;
+        return UPD_TIMEOUT;
     }
 
     // Parse status code
@@ -54,12 +54,14 @@ bool weatherClient::updateWeather(String apiKey, String lat, String lon) {
 
         if (statusLine.indexOf(F("401")) > 0) {
             lastErrorMsg = F("Not Authorized");
+            return UPD_UNAUTHORISED;
         } else if (statusLine.indexOf(F("500")) > 0) {
             lastErrorMsg = F("Server Error");
+            return UPD_DATA_ERROR;
         } else {
             lastErrorMsg = statusLine;
+            return UPD_HTTP_ERROR;
         }
-        return false;
     }
 
     // Skip the remaining headers
@@ -84,13 +86,13 @@ bool weatherClient::updateWeather(String apiKey, String lat, String lon) {
     httpClient.stop();
     if (millis() >= dataSendTimeout) {
         lastErrorMsg += F("Data timeout");
-        return false;
+        return UPD_TIMEOUT;
     }
 
     lastErrorMsg="Success - took " + String(millis()-perfTimer) + F("ms");
 
     currentWeather = description + " " + String((int)round(temperature)) + F("\xB0 Wind: ") + String((int)round(windSpeed)) + F("mph");
-    return true;
+    return UPD_SUCCESS;
 }
 
 void weatherClient::whitespace(char c) {}

@@ -125,7 +125,7 @@
                 $btn.prop('disabled', true);
                 const isOwmValid = await validateOwmKey(owmToken);
                 if (!isOwmValid) {
-                    alert("The OpenWeather Map API key is not valid. Please check you have copied your key correctly. It may take up to 30 minutes for a newly created key to become active.\n\nNo changes have been saved.");
+                    await bsAlert("The OpenWeather Map API key is not valid. Please check you have copied your key correctly. It may take up to 30 minutes for a newly created key to become active.\n\nNo changes have been saved.");
                     $btn.prop('disabled', false);
                     return;
                 }
@@ -141,17 +141,93 @@
                     type: 'POST',
                     contentType: 'application/json',
                     data: JSON.stringify(payload),
-                    success: function (response) {
-                        alert(response);
+                    success: async function (response) {
+                        await bsAlert(response,"Departures Board Setup",10000);
                         location.replace("/");
                     },
-                    error: function (xhr, status, error) {
-                        alert(xhr.responseText);
+                    error: async function (xhr, status, error) {
+                        await bsAlert(xhr.responseText,"System Error");
                         $btn.prop('disabled', false);
                     }
                 });
             });
         });
+
+        // Utility function to generate dynamic Bootstrap 5 modals
+        function showBsModal(options) {
+            const {
+            title = 'Message',
+            body = '',
+            type = 'alert',
+            timeout = 0,
+            onConfirm = () => {},
+            onCancel = () => {}
+            } = options;
+
+            // Create unique ID for the modal
+            const modalId = 'bsModal-' + Date.now();
+
+            const modalHtml = `
+            <div class="modal fade" id="${modalId}" tabindex="-1" aria-labelledby="${modalId}Label" aria-hidden="true" data-bs-backdrop="static">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="${modalId}Label">${title}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" style="white-space: pre-wrap;">${body}</div>
+                <div class="modal-footer">
+                    ${type === 'confirm' ? `<button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="${modalId}-btn-cancel">Cancel</button>` : ''}
+                    <button type="button" class="btn btn-primary" id="${modalId}-btn-ok">${type === 'confirm' ? 'OK' : 'Close'}</button>
+                </div>
+                </div>
+            </div>
+            </div>`;
+
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            const modalElement = document.getElementById(modalId);
+            const bsModal = new bootstrap.Modal(modalElement);
+            let isConfirmed = false;
+
+            document.getElementById(`${modalId}-btn-ok`).addEventListener('click', () => {
+            isConfirmed = true;
+            bsModal.hide();
+            onConfirm();
+            });
+
+            if (type === 'confirm') {
+            document.getElementById(`${modalId}-btn-cancel`).addEventListener('click', () => {
+                bsModal.hide();
+                onCancel();
+            });
+            }
+
+            modalElement.addEventListener('hidden.bs.modal', () => {
+            if (!isConfirmed && type === 'confirm') {
+                onCancel();
+            } else if (!isConfirmed && type === 'alert') {
+                onConfirm();
+            }
+            modalElement.remove();
+            });
+
+            bsModal.show();
+
+            if (timeout > 0) {
+            setTimeout(() => {
+                if (document.getElementById(modalId)) {
+                bsModal.hide();
+                }
+            }, timeout);
+            }
+        }
+
+        // Wrapper for an Alert Modal
+        function bsAlert(message,title='Departures Board',timeout=0) {
+            return new Promise(resolve => {
+            showBsModal({title,body:message,type:'alert',timeout,onConfirm:resolve,onCancel:resolve});
+            });
+        }
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
 </body>

@@ -12,8 +12,7 @@
 #include <JsonListener.h>
 #include <JsonStreamingParser.h>
 #include <stationData.h>
-
-typedef void (*busClientCallback) ();
+#include <responseCodes.h>
 
 #define MAXBUSLINESIZE 9
 #define BUSMAXREADSERVICES 20
@@ -49,6 +48,7 @@ class busDataClient: public JsonListener {
         int id=0;
         String longName;
         bool maxServicesRead = false;
+        bool boardChanged = false;
         busStop xBusStop;
 
         String stripTag(String html);
@@ -61,9 +61,9 @@ class busDataClient: public JsonListener {
         String lastErrorMsg = "";
 
         busDataClient();
-        int getStopLongName(const char *locationId, char *locationName);
         void cleanFilter(const char* rawFilter, char* cleanedFilter, size_t maxLen);
-        int updateDepartures(rdStation *station, const char *locationId, const char *filter, busClientCallback Xcb);
+        int fetchDepartures(rdStation *station, const char *locationId, const char *filter);
+        void loadDepartures(rdStation *station);
 
         virtual void whitespace(char c);
         virtual void startDocument();
