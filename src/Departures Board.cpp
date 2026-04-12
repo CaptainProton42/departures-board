@@ -1312,7 +1312,7 @@ void softResetBoard(boardModes forcedMode, bool switchAlt) {
         touchOverrideAlt = true;
         if (!altStationActive) {
           altStationActive = setAlternateStation(true);
-        }
+        } else altStationActive = false;
       } else {
         touchOverrideAlt = false;
         altStationActive = setAlternateStation(false);
